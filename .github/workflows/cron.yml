@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   synchronize:
-    if: ${{ github.repository_owner == 'thunderbird' }}
+    if: ${{ github.repository_owner == 'kewisch' }}
     uses: ./.github/workflows/run.yml
     secrets: inherit
     with:
