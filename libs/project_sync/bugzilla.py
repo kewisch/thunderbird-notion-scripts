@@ -5,6 +5,8 @@ import base64
 import logging
 import datetime
 
+from json.decoder import JSONDecodeError
+
 from functools import cache
 
 from ..util import getnestedattr, RetryingClient
@@ -144,7 +146,13 @@ class Bugzilla(IssueTracker):
         fields = "id,summary,status,product,cf_user_story,assigned_to,priority,depends_on,blocks,attachments,comments,see_also,creation_time,cf_last_resolved"
 
         response = self.client.get("/bug", params={"id": ",".join(bugids), "include_fields": fields})
-        response_json = response.json()
+        try:
+            response_json = response.json()
+        except JSONDecodeError as e:
+            print("READ ERROR", response)
+            print("READ ERROR", response.headers)
+            print("READ ERROR", response.text)
+            raise e
 
         for bug in response_json["bugs"]:
             assignee = bug["assigned_to"] if bug["assigned_to"] != "nobody@mozilla.org" else None
