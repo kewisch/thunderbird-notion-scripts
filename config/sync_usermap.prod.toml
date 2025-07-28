@@ -1,0 +1,198 @@
+
+[bugzilla]
+
+"mkmelin+mozilla@iki.fi" = "f3a8a2fa-a549-49bb-a7f6-ee5ff35de407"
+"alessandro@thunderbird.net" = "e44654ca-6460-47b3-9043-9ea8838a6612"
+"vineet@thunderbird.net" = "f017e450-6b8e-448a-a9ce-2696c80807b2"
+"geoff@thunderbird.net" = "f5fdb9a2-d25d-4af8-ae21-db2cfaa0de61"
+"martin@humanoids.be" = "450347d0-4d40-47d5-a042-27a19494039f"
+"brendan@thunderbird.net" = "b793ceb7-aa14-414b-8b7c-7930b3dbb69c"
+"benc@thunderbird.net" = "5cc5d923-47df-47d7-9366-eb8a25b158d5"
+"kaie@kuix.de" = "7c57168b-22f6-48cf-8f54-8abeaedd7757"
+"arschmitz@thunderbird.net" = "92026e0b-214c-42bc-a106-afbbf3af7408"
+"toby@thunderbird.net" = "4706dbe5-222d-4822-a424-3a325b42a5f6"
+"john@thunderbird.net" = "c3936344-ca1b-46c0-b0c3-e2a308bc419e"
+"edicharry@thunderbird.net" = "1d5d872b-594c-81f8-ae5f-000295648d02"
+"rdonovan@thunderbird.net" = "207d872b-594c-815b-9ca3-000280503668"
+
+[github]
+kewisch = "65baf5a6-b353-4d90-a787-b194f0780da3"
+cketti = "360a2ce1-c46a-4b92-b54f-dbef1ea8667a"
+wmontwe = "8583f0f6-f8c7-4f79-93b6-7e0d68647632"
+toddheasley = "1c2d872b-594c-811b-9b6f-000282f75e76"
+asoucar = "1ced872b-594c-8106-ba21-0002110d4784"
+rafaeltonholo = "1d7d872b-594c-815f-b75e-0002fc3a0d78"
+rtanglao = "92f81edb-3dee-4d09-9716-f903f47f3550"
+wsmwk = "2e5a097b-485f-4b44-a1a7-e840b9184b6c"
+hellsworth = "d310eb65-e5e6-48d9-91d4-db93cd9b967c"
+kaie = "7c57168b-22f6-48cf-8f54-8abeaedd7757"
+sarahthunderbird =  "f4a195bc-c6d5-4125-bdad-8b549b5df066"
+sancus = "69b63d5a-3203-4e90-80bc-3ad00d8dc9df"
+ryanleesipes = "008839d9-993f-41ea-b703-688cb69d20ec"
+Alecaddd = "e44654ca-6460-47b3-9043-9ea8838a6612"
+mkmelin = "f3a8a2fa-a549-49bb-a7f6-ee5ff35de407"
+darktrojan = "92f81edb-3dee-4d09-9716-f903f47f3550"
+solangevalverde = "8175a8db-6f46-4257-8728-888b6bd09182"
+freaktechnik = "450347d0-4d40-47d5-a042-27a19494039f"
+babolivier = "b793ceb7-aa14-414b-8b7c-7930b3dbb69c"
+MelissaAutumn = "a978b04a-480f-4add-9ec3-c1002dfe43fb"
+dandarnell = "eff2e688-9cef-47cb-9606-aff290113cac"
+inattee = "ed4f17cd-ac6a-4f6c-8ed3-5741e967cbd0"
+ryanjjung = "94bf9096-1ea8-4408-974a-268fa9e5e5fb"
+malini = "8d692169-a207-44da-ad20-b3404dd2ff45"
+laurelterlesky = "94fe0d7f-8ba5-4d4e-a153-14d56e6b8fd0"
+tobypilling = "4706dbe5-222d-4822-a424-3a325b42a5f6"
+aaspinwall = "de86a627-193d-4cc3-a2b2-153662550d75"
+coreycb = "a6fcf5c7-7fe9-4bf1-905b-ad52730c53aa"
+jobisoft = "c3936344-ca1b-46c0-b0c3-e2a308bc419e"
+
+
+#monica-thunderbird = "7073d03a-a9fc-4d6b-8a8a-1277d51b9407"
+#rwood-moz = ""
+#vineet = "f017e450-6b8e-448a-a9ce-2696c80807b2"
+# benc = "5cc5d923-47df-47d7-9366-eb8a25b158d5"
+# chrisA = "abbe08cf-af72-4257-8fec-89b7652fdf98"
+# archmitz = "92026e0b-214c-42bc-a106-afbbf3af7408"
+# rtaylor = "1dfd872b-594c-81f8-a53e-000298fe45a4"
+# jmiksic = "1c9d872b-594c-81eb-9dcf-0002601d926b"
+
+
+
+
+
+
+
+#             {'avatar_url': 'https://s3-us-west-2.amazonaws.com/public.notion-static.com/71c2af76-1e7b-4c2f-a589-09dc37ff7e5d/devmount_lego_square_1024.png',
+#              'id': '146d872b-594c-81ad-b258-000262871825',
+#              'name': 'Andreas',
+#              'object': 'user',
+#              'person': {'email': 'andreas@thunderbird.net'},
+#              'type': 'person'},
+#             {'avatar_url': None,
+#              'id': '134d872b-594c-813f-94cb-0002a0ab30b2',
+#              'name': 'Rob Wood',
+#              'object': 'user',
+#              'person': {'email': 'rwood@thunderbird.net'},
+#              'type': 'person'},
+#             {'avatar_url': 'https://s3-us-west-2.amazonaws.com/public.notion-static.com/e7b4df3f-4343-4f28-9de6-c0918af6df17/profile-picture-2.jpg',
+#              'id': '1d5d872b-594c-81f8-ae5f-000295648d02',
+#              'name': 'Eleanor Dicharry',
+#              'object': 'user',
+#              'person': {'email': 'edicharry@thunderbird.net'},
+#              'type': 'person'},
+#             {'avatar_url': None,
+#              'id': '1c2d872b-594c-811b-9b6f-000282f75e76',
+#              'name': 'Todd Heasley',
+#              'object': 'user',
+#              'person': {'email': 'theasley@thunderbird.net'},
+#              'type': 'person'},
+#             {'avatar_url': 'https://s3-us-west-2.amazonaws.com/public.notion-static.com/3ce786c0-d45b-4de4-9e74-61a303c0e524/IMG_51483-cropped.jpg',
+#              'id': '1d7d872b-594c-815f-b75e-0002fc3a0d78',
+#              'name': 'Rafael Tonholo',
+#              'object': 'user',
+#              'person': {'email': 'rtonholo@thunderbird.net'},
+#              'type': 'person'},
+#             {'avatar_url': 'https://lh3.googleusercontent.com/a/ACg8ocLamAp6n7lDij_-E4oSTtKPaMreK40TEkhvao5n6MiOzNssmw=s100',
+#              'id': '1ced872b-594c-8106-ba21-0002110d4784',
+#              'name': 'Ashley Soucar',
+#              'object': 'user',
+#              'person': {'email': 'asoucar@thunderbird.net'},
+#              'type': 'person'},
+#             {'avatar_url': None,
+#              'id': '1e4d872b-594c-81b0-9c49-00025d67f1fe',
+#              'name': 'Patrick Cloke',
+#              'object': 'user',
+#              'person': {'email': 'clokep@thunderbird.net'},
+#              'type': 'person'},
+#             {'avatar_url': None,
+#              'id': '1e4d872b-594c-818d-8eb9-00021948da24',
+#              'name': 'Tim Maks',
+#              'object': 'user',
+#              'person': {'email': 'tbroek@thunderbird.net'},
+#              'type': 'person'},
+#             {'avatar_url': 'https://s3-us-west-2.amazonaws.com/public.notion-static.com/f54bf489-4361-44aa-85ae-46d2bd98e6be/micz.jpg',
+#              'id': '1e4d872b-594c-81b7-b611-000215ff555d',
+#              'name': 'Michele Zelco',
+#              'object': 'user',
+#              'person': {'email': 'mzelco@thunderbird.net'},
+#              'type': 'person'},
+#             {'avatar_url': 'https://s3-us-west-2.amazonaws.com/public.notion-static.com/2b57d660-ba39-44fd-b955-a3dc3332beb2/Teal_Dulcets_Logo.png',
+#              'id': '1e4d872b-594c-8181-97df-000291afe0ad',
+#              'name': 'Teal Dulcet',
+#              'object': 'user',
+#              'person': {'email': 'teal@thunderbird.net'},
+#              'type': 'person'},
+#             {'avatar_url': 'https://s3-us-west-2.amazonaws.com/public.notion-static.com/7ad603b9-aff9-428f-b817-041fb8ecc952/1516847067837.png',
+#              'id': '1f2d872b-594c-812a-9e41-00023d7861de',
+#              'name': 'Chris Roth',
+#              'object': 'user',
+#              'person': {'email': 'croth@thunderbird.net'},
+#              'type': 'person'},
+#             {'avatar_url': None,
+#              'id': '20fd872b-594c-8144-a94d-000292304d5b',
+#              'name': 'jtracey',
+#              'object': 'user',
+#              'person': {'email': 'jtracey@thunderbird.net'},
+#              'type': 'person'},
+#             {'avatar_url': 'https://lh3.googleusercontent.com/a/ACg8ocI_u6CvZjqm3jG5YPbwUYcmlLCgv3JN33s6WSUjaOhUns8KqQ=s100',
+#              'id': '207d872b-594c-815b-9ca3-000280503668',
+#              'name': 'Regina Donovan',
+#              'object': 'user',
+#              'person': {'email': 'rdonovan@thunderbird.net'},
+#              'type': 'person'},
+#             {'avatar_url': 'https://s3-us-west-2.amazonaws.com/public.notion-static.com/87886e1d-e59e-4745-9504-13d7f8e7855c/211755_-_Davi_Nakano.jpg',
+#              'id': '217d872b-594c-81c5-8994-0002a1efda8c',
+#              'name': 'Davi Nakano',
+#              'object': 'user',
+#              'person': {'email': 'dnakano@thunderbird.net'},
+#              'type': 'person'},
+#             {'avatar_url': 'https://s3-us-west-2.amazonaws.com/public.notion-static.com/c4aab54c-5bdf-4018-9643-699b93195c83/lisawess.jpg',
+#              'id': '222d872b-594c-8170-a001-000234a18bb4',
+#              'name': 'Lisa Wess',
+#              'object': 'user',
+#              'person': {'email': 'lwess@thunderbird.net'},
+#              'type': 'person'},
+#             {'avatar_url': 'https://lh3.googleusercontent.com/a/ACg8ocI2dGkIVhIA4GXA3dECXqOeJyVDUEnn3cWcPRIABCDz38V5DQ=s100',
+#              'id': '223d872b-594c-810a-820f-0002cc9ecd0c',
+#              'name': 'Michael Ellis',
+#              'object': 'user',
+#              'person': {'email': 'mellis@thunderbird.net'},
+#              'type': 'person'},
+#             {'avatar_url': None,
+#              'id': '22bd872b-594c-8187-9588-00023a776ff7',
+#              'name': 'Arron Atchison',
+#              'object': 'user',
+#              'person': {'email': 'aatchison@thunderbird.net'},
+#              'type': 'person'},
+#             {'avatar_url': 'https://s3-us-west-2.amazonaws.com/public.notion-static.com/7bc7660f-763c-4950-a277-c5dbdffe551b/IMG_1097.jpg',
+#              'id': '22cd872b-594c-81bc-bb60-0002945b1958',
+#              'name': 'Stephen King',
+#              'object': 'user',
+#              'person': {'email': 'sking@thunderbird.net'},
+#              'type': 'person'},
+#             {'avatar_url': None,
+#              'id': '22dd872b-594c-81e4-82c2-0002847bd006',
+#              'name': 'David Hathaway',
+#              'object': 'user',
+#              'person': {'email': 'dhathaway@thunderbird.net'},
+#              'type': 'person'},
+#             {'avatar_url': 'https://s3-us-west-2.amazonaws.com/public.notion-static.com/7edfb0b8-aae4-439a-b725-353372de3eea/c67b0aca-a352-480f-9328-8c7f39d5d798.png',
+#              'bot': {},
+#              'id': '3c5177d6-6070-4247-964b-0d77fa392686',
+#              'name': 'MZLA Integrations',
+#              'object': 'user',
+#              'type': 'bot'},
+#             {'avatar_url': 'https://s3-us-west-2.amazonaws.com/public.notion-static.com/e3b22b77-a3a1-45f9-b4e3-ba257bfa5c2d/forms.app_logo.png',
+#              'bot': {},
+#              'id': '26e33c18-87fe-41b4-88ec-d11a8243f319',
+#              'name': 'forms.app',
+#              'object': 'user',
+#              'type': 'bot'},
+#             {'avatar_url': 'https://s3-us-west-2.amazonaws.com/public.notion-static.com/b824e450-23d6-4ca3-8ee8-4c14a17f27ac/395cc74c-ba69-47b3-af05-af4514c94ca0.png',
+#              'bot': {'owner': {'type': 'workspace', 'workspace': True},
+#                      'workspace_limits': {'max_file_upload_size_in_bytes': 5368709120},
+#                      'workspace_name': 'Thunderbird'},
+#              'id': '893dc2b4-a23d-4c63-b1f4-9de301d66c2e',
+#              'name': 'MZLA Test Integrations',
+#              'object': 'user',
+#              'type': 'bot'}],
