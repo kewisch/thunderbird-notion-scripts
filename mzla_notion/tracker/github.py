@@ -436,6 +436,8 @@ class GitHub(IssueTracker):
                     chunk_size = chunk_size // 2
                     logger.info(f"Decreasing chunk size to {chunk_size} due to validation timeout")
                     continue
+
+                print("EEE", e.errors)
                 raise e
 
     async def get_sprints(self):
