@@ -152,6 +152,7 @@ class GitHubProjectTest(BaseTestCase):
             review_url=None,
             notion_url=None,
             created_date=datetime.datetime(2025, 1, 31, 20, 38, 43, tzinfo=datetime.timezone.utc),
+            updated_date=datetime.datetime(2025, 1, 31, 20, 38, 43, tzinfo=datetime.timezone.utc),
             start_date=None,
             end_date=None,
             sprint=Sprint(
@@ -168,6 +169,7 @@ class GitHubProjectTest(BaseTestCase):
             iterator = self.github.get_issues_by_number([IssueRef(repo="kewisch/test", id="3")])
             issues = {issue.id: issue async for issue in iterator}
             self.assertEqual(issues["3"].gql.id, "I_kwDOMwGgpM6oWELp")
+            issue3.updated_date = issues["3"].updated_date
 
             issues["3"].gql = None
             self.assertEqual(issues, {"3": issue3})
@@ -176,6 +178,7 @@ class GitHubProjectTest(BaseTestCase):
             iterator = self.github.get_issues_by_number([IssueRef(repo="kewisch/test", id="3")])
             issues = {issue.id: issue async for issue in iterator}
             self.assertEqual(issues["3"].gql.id, "I_kwDOMwGgpM6oWELp")
+            issue3.updated_date = issues["3"].updated_date
 
             issue3.sprint.status = "Current"
 
@@ -186,6 +189,7 @@ class GitHubProjectTest(BaseTestCase):
             iterator = self.github.get_issues_by_number([IssueRef(repo="kewisch/test", id="3")])
             issues = {issue.id: issue async for issue in iterator}
             self.assertEqual(issues["3"].gql.id, "I_kwDOMwGgpM6oWELp")
+            issue3.updated_date = issues["3"].updated_date
 
             issue3.sprint.status = "Future"
 
@@ -496,6 +500,14 @@ class GitHubProjectTest(BaseTestCase):
     async def test_get_all_issues(self):
         issues = [issue async for issue in self.github.get_all_issues()]
         self.assertEqual(len(issues), 7)
+        self.assertIsNotNone(issues[0].updated_date)
+
+    async def test_get_recent_issues_by_repo(self):
+        since = datetime.datetime(2025, 7, 1, tzinfo=datetime.timezone.utc)
+        repos = await self.github.get_recent_issues_by_repo(since, sub_issues=False)
+        self.assertIn("kewisch/test", repos)
+        self.assertGreaterEqual(len(repos["kewisch/test"]), 1)
+        self.assertIn("1", repos["kewisch/test"])
 
     async def test_label_cache(self):
         cache = LabelCache(self.github.endpoint)

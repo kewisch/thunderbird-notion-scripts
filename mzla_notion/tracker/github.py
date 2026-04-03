@@ -277,6 +277,17 @@ class GitHub(IssueTracker, GitHubFixups):
             self._update_issue_type(old_issue, new_issue),
         )
 
+    async def update_task_issue(self, old_issue, new_issue):
+        """Update a task issue on GitHub.
+
+        Task updates intentionally skip milestone project and issue type operations.
+        """
+        await asyncio.gather(
+            self._update_issue_basic(old_issue, new_issue),
+            self._update_issue_assignees(old_issue, new_issue),
+            self._update_issue_labels(old_issue, new_issue),
+        )
+
     async def _update_issue_basic(self, old_issue, new_issue):
         matches = True
         for prop in ["title", "state", "description"]:
@@ -527,6 +538,7 @@ class GitHub(IssueTracker, GitHubFixups):
             issue_type=getnestedattr(lambda: ghissue.issue_type.name, None),
             state=state,
             created_date=ghissue.created_at,
+            updated_date=ghissue.updated_at,
             closed_date=ghissue.closed_at,
             start_date=getnestedattr(lambda: gh_project_item.start_date.date, None),
             end_date=getnestedattr(lambda: gh_project_item.target_date.date, None),
@@ -696,7 +708,7 @@ class GitHub(IssueTracker, GitHubFixups):
             for ghissue in pull.closing_issues_references.nodes:
                 yield await self._parse_issue(ghissue)
 
-    async def _get_repo_issues(self, reporef, sub_issues=False, issue_type=None):
+    async def _get_repo_issues(self, reporef, sub_issues=False, issue_type=None, since=None):
         has_next_page = True
         cursor = None
 
@@ -711,6 +723,9 @@ class GitHub(IssueTracker, GitHubFixups):
             }
             if issue_type:
                 issue_args["filter_by"] = {"type": issue_type}
+            if since is not None:
+                issue_args["filter_by"] = {"since": since}
+
             issues = op.repository(owner=orgname, name=reponame).issues(**issue_args)
             issues.page_info.__fields__(has_next_page=True)
             issues.page_info.__fields__(end_cursor=True)
@@ -734,10 +749,28 @@ class GitHub(IssueTracker, GitHubFixups):
             has_next_page = repo.issues.page_info.has_next_page
             cursor = repo.issues.page_info.end_cursor
 
+    async def get_recent_issues_by_repo(self, since, sub_issues=False):
+        """Get recently updated issues grouped by repository."""
+        repos = defaultdict(dict)
+        since_iso = since.strftime("%Y-%m-%dT%H:%M:%SZ") if since else None
+
+        merged = aiostream.stream.merge(
+            *[
+                self._get_repo_issues(orgrepo, sub_issues=sub_issues, since=since_iso)
+                for orgrepo in self.allowed_repositories
+            ]
+        )
+
+        async with merged.stream() as streamer:
+            async for issue in streamer:
+                repos[issue.repo][issue.id] = issue
+
+        return repos
+
     async def get_all_issues(self, sub_issues=False):
         """Get all issues in all asscoiated repositories."""
         merged = aiostream.stream.merge(
-            *[self._get_repo_issues(orgrepo, sub_issues) for orgrepo in self.allowed_repositories]
+            *[self._get_repo_issues(orgrepo, sub_issues=sub_issues) for orgrepo in self.allowed_repositories]
         )
 
         async with merged.stream() as streamer:

@@ -7,6 +7,7 @@ import httpx
 import json
 import urllib.parse
 import uuid
+import datetime
 
 
 from pathlib import Path
@@ -154,13 +155,44 @@ class BugzillaHandler:
 
     def query_handler(self, req):
         qs = urllib.parse.parse_qs(req.url.query)
-        bugs = {
-            "bugs": [
+
+        def ensure_last_change_time(bug):
+            if bug.get("last_change_time"):
+                return bug["last_change_time"]
+            return bug.get("creation_time")
+
+        if b"id" in qs:
+            selected = [
                 bugdata
                 for bugid in qs[b"id"][0].split(b",")
                 if (bugdata := self.bugs.get(bugid.decode("utf-8"))) is not None
             ]
-        }
+        else:
+            selected = list(self.bugs.values())
+
+            if b"product" in qs:
+                products = {item.decode("utf-8") for item in qs[b"product"]}
+                selected = [bug for bug in selected if bug.get("product") in products]
+
+            if b"last_change_time" in qs:
+                since = datetime.datetime.fromisoformat(
+                    qs[b"last_change_time"][0].decode("utf-8").replace("Z", "+00:00")
+                )
+                filtered = []
+                for bug in selected:
+                    value = ensure_last_change_time(bug)
+                    if not value:
+                        continue
+                    changed = datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+                    if changed >= since:
+                        filtered.append(bug)
+                selected = filtered
+
+        for bug in selected:
+            if "last_change_time" not in bug and bug.get("creation_time"):
+                bug["last_change_time"] = bug["creation_time"]
+
+        bugs = {"bugs": selected}
         return httpx.Response(200, json=bugs)
 
 

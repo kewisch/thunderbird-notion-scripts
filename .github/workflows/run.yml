@@ -21,6 +21,9 @@ on:
       dry:
         type: boolean
         description: Do a dry run
+      full_sync:
+        type: boolean
+        description: Disable incremental mode for supported synchronizers
 
 concurrency:
   group: synchronize
@@ -118,6 +121,7 @@ jobs:
           PROJECT: ${{ matrix.synchronizer }}
           VERBOSE: ${{ runner.debug && '-vv' || '' }}
           DRY: ${{ inputs.dry && '-n' || '' }}
+          FULL_SYNC: ${{ inputs.full_sync && '--full-sync' || '' }}
           NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
           GITHUB_TOKEN: ${{ steps.apptoken.outputs.token || secrets.GH_PAT }}
           PHAB_TOKEN: ${{ secrets.PHAB_TOKEN }}
@@ -125,4 +129,4 @@ jobs:
           NOTION_SYNC_GITHUB_USERMAP: ${{ vars.NOTION_SYNC_GITHUB_USERMAP }}
           NOTION_SYNC_BUGZILLA_USERMAP: ${{ vars.NOTION_SYNC_BUGZILLA_USERMAP }}
         run: |
-          uv run -m mzla_notion ${DRY} ${VERBOSE} -c config/sync_settings.${ENVIRONMENT}.toml ${PROJECT}
+          uv run -m mzla_notion ${DRY} ${FULL_SYNC} ${VERBOSE} -c config/sync_settings.${ENVIRONMENT}.toml ${PROJECT}
