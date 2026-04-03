@@ -314,7 +314,7 @@ class Bugzilla(IssueTracker):
     async def _get_bugzilla_bugs(self, bugids, sub_issues=False):
         issues = {}
         review_urls = {}
-        fields = "id,summary,status,resolution,product,cf_user_story,assigned_to,priority,cf_fx_points,depends_on,blocks,attachments,comments,see_also,creation_time,cf_last_resolved,keywords,whiteboard,target_milestone"
+        fields = "id,summary,status,resolution,product,cf_user_story,assigned_to,priority,cf_fx_points,depends_on,blocks,attachments,comments,see_also,creation_time,last_change_time,cf_last_resolved,keywords,whiteboard,target_milestone"
 
         response = await self.client.get("/bug", params={"id": ",".join(bugids), "include_fields": fields})
         response_json = response.json()
@@ -372,6 +372,7 @@ class Bugzilla(IssueTracker):
                 parents=parents,
                 sub_issues=sub_issues,
                 created_date=datetime.datetime.fromisoformat(bug["creation_time"]),
+                updated_date=datetime.datetime.fromisoformat(bug.get("last_change_time") or bug["creation_time"]),
                 closed_date=closed_date,
             )
 
@@ -444,6 +445,27 @@ class Bugzilla(IssueTracker):
         for got_bugs in asyncio.as_completed(tasks):
             for issue in await got_bugs:
                 yield issue
+
+    async def get_recent_issues_by_repo(self, since, sub_issues=False):
+        """Get recently updated bugzilla issues grouped by repository."""
+        params = {"include_fields": "id", "last_change_time": since.strftime("%Y-%m-%dT%H:%M:%SZ")}
+
+        if self.property_names["bugzilla_allowed_products"]:
+            params["product"] = self.property_names["bugzilla_allowed_products"]
+
+        response = await self.client.get("/bug", params=params)
+        bug_ids = [str(bug["id"]) for bug in response.json().get("bugs", [])]
+
+        repos = {self.repo_name: {}}
+        if not bug_ids:
+            return repos
+
+        async for issue in self.get_issues_by_number(
+            [IssueRef(repo=self.repo_name, id=bug_id) for bug_id in bug_ids], sub_issues=sub_issues
+        ):
+            repos[self.repo_name][issue.id] = issue
+
+        return repos
 
 
 class BugzillaAsyncRetryingClient(AsyncRetryingClient):

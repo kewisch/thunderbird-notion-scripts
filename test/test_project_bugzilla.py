@@ -156,6 +156,16 @@ class BugzillaProjectTest(BaseTestCase):
         self.assertEqual(issue.notion_url, "https://www.notion.so/mzthunderbird/b183c949289f4282864cd373cb8b2cb7")
         self.assertEqual(issue.target_milestone, "154 Branch")
         self.assertEqual(issue.estimate, "8")
+        self.assertIsNotNone(issue.updated_date)
+
+    async def test_bugzilla_get_recent_issues_by_repo(self):
+        since = datetime.datetime(2025, 1, 1, tzinfo=datetime.timezone.utc)
+        repos = await self.bugzilla.get_recent_issues_by_repo(since, sub_issues=False)
+
+        self.assertIn("bugzilla.dev", repos)
+        self.assertGreaterEqual(len(repos["bugzilla.dev"]), 1)
+        self.assertIn("1944850", repos["bugzilla.dev"])
+        self.assertIsNotNone(repos["bugzilla.dev"]["1944850"].updated_date)
 
     async def test_bugzilla_get_issues_reviewers(self):
         reviewer = "reviewer-user"

@@ -2,70 +2,90 @@
 
 [sync]
 
+
 [sync.services]
-method = "github_labels"
-notion_tasks_id = "19ddea4adcdf8052906aeeb2f3d5acc9"
-notion_milestones_id = "19ddea4adcdf8018b060cda446ff2835"
-strip_orgname = true
+method = "tracker_twoway"
+tracker = "github"
+notion_tasks_id = "3372df5d45ae808f83dcce2c88580ffa"
+notion_milestones_id = "3372df5d45ae8099b384d3d8bb2b424d"
 
-repositories = [
-  "kewisch/test"
-]
+notion_team_id = "2332df5d45ae80bc8839d089f5c7f608"
+notion_associated_team = ["2332df5d45ae8083af1dcda07b5c1eca", "31a2df5d45ae80d38897dd6efe4e134a"]
 
-
-[sync.mobile]
-method = "github_project"
-notion_tasks_id = "18adea4adcdf807c8fabcc9c11b61777"
-notion_milestones_id = "18adea4adcdf80b9a9e0f3c1a18ede53"
-notion_sprints_id = "18adea4adcdf8073af16f1d07eb1661e"
-
-#milestones_body_sync = true
+milestones_body_sync = false
 milestones_body_sync_if_empty = true
-sprints_merge_by_name = true
-milestones_github_label = "type: epic"
+milestones_create_from_tracker = true
+tasks_body_sync = false
+incremental_lookback_days = 7
 
-tasks_notion_prefix = "[GitHub] "
+# Two-way directions (defaults shown explicitly)
+tasks_tracker_to_notion = true
+tasks_notion_to_tracker = false
+milestones_tracker_to_notion = true
+milestones_notion_to_tracker = true
 
-[sync.mobile.repositories]
+[sync.services.repositories]
 
-[sync.mobile.repositories.test]
+[sync.services.repositories.test]
 repositories = [
-  "kewisch/test"
+  "thunderbird/test"
 ]
-github_tasks_project_id = "PVT_kwHOAAlD3s4AxVFW"
-github_milestones_project_id = "PVT_kwHOAAlD3s4AxVDI"
+#github_tasks_project_id = "PVT_kwHOAAlD3s4AxVFW"
+#github_milestones_project_id = "PVT_kwHOAAlD3s4AxVDI"
 
-[sync.mobile.repositories.test2]
-repositories = [
-  "kewisch/test2"
-]
-github_tasks_project_id = "PVT_kwHOAAlD3s4A1bUZ"
-github_milestones_project_id = "PVT_kwHOAAlD3s4A1bUn"
+#[sync.mobile.repositories.test2]
+#repositories = [
+#  "kewisch/test2"
+#]
+#github_tasks_project_id = "PVT_kwHOAAlD3s4A1bUZ"
+#github_milestones_project_id = "PVT_kwHOAAlD3s4A1bUn"
 
-[sync.mobile.properties]
-notion_tasks_title = "Title"
-notion_tasks_assignee = "Assignee"
-notion_tasks_dates = "Date"
-notion_tasks_milestone_relation = "Project"
-notion_milestones_title = "Name"
-notion_milestones_assignee = "Assignee"
-notion_tasks_open_state = "Not started"
-notion_issue_field = "GitHub Issue"
-notion_sprint_tracker_id = "GitHub ID"
-
-
-[sync.bugzilla]
-method = "bugzilla_project"
-tracker_dry_run = true
-notion_tasks_id = "20edea4adcdf80b782faf2011506f86e"
-notion_milestones_id = "20edea4adcdf8064878af1281be913c8"
-bugzilla_base = "https://bugzilla.mozilla.org"
-milestones_tracker_prefix = "[meta] "
-
-[sync.bugzilla.properties]
+[sync.services.properties]
 notion_tasks_title = "Name"
 notion_tasks_assignee = "Assignee"
+notion_tasks_dates = "Date"
+notion_tasks_planned_dates = "Original Due Date"
+#notion_tasks_openclose = ["Opened", "Closed"]
+notion_tasks_priority = "Priority"
+notion_tasks_review_url = "Patch URL"
+notion_tasks_reviewers = "Peer Reviewer"
+notion_tasks_team = "Team"
+notion_tasks_milestone_relation = "Milestones"
+#notion_tasks_sprint_relation = "Sprint"
+notion_tasks_text_assignee = ""
+notion_tasks_labels = "Keywords (Services)"
 notion_milestones_title = "Name"
-notion_issue_field = "Bugzilla Issue"
-notion_tasks_milestone_relation = "Milestone"
-notion_tasks_priority_values = ["P1", "P2", "P3", "P4", "P5"]
+notion_milestones_team = "Team"
+notion_milestones_assignee = "Assignee"
+notion_milestones_priority = "Priority"
+notion_milestones_dates = "Original Due Date"
+notion_issue_field = "Bug URL"
+notion_default_open_state = "Backlog"
+notion_inprogress_state = "In progress"
+notion_closed_states = ["Done", "Canceled"]
+notion_tasks_repository = "Product (Services)"
+
+
+#[sync.bugzilla]
+#method = "tracker_twoway"
+#tracker = "bugzilla"
+#tracker_dry_run = true
+#notion_tasks_id = "20edea4adcdf80b782faf2011506f86e"
+#notion_milestones_id = "20edea4adcdf8064878af1281be913c8"
+#bugzilla_base = "https://bugzilla.mozilla.org"
+#milestones_tracker_prefix = "[meta] "
+#incremental_lookback_days = 7
+#
+## Two-way directions (defaults shown explicitly)
+#tasks_tracker_to_notion = true
+#tasks_notion_to_tracker = false
+#milestones_tracker_to_notion = false
+#milestones_notion_to_tracker = true
+#
+#[sync.bugzilla.properties]
+#notion_tasks_title = "Name"
+#notion_tasks_assignee = "Assignee"
+#notion_milestones_title = "Name"
+#notion_issue_field = "Bugzilla Issue"
+#notion_tasks_milestone_relation = "Milestone"
+#notion_tasks_priority_values = ["P1", "P2", "P3", "P4", "P5"]

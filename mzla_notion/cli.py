@@ -10,6 +10,7 @@ import tomllib
 
 from .sync.label import synchronize as synchronize_gh_label
 from .sync.project import synchronize as synchronize_project
+from .sync.twoway import synchronize as synchronize_twoway
 from .sync.board import synchronize as synchronize_board
 from .sync.deployments import synchronize as synchronize_deployments
 from .tracker.github import GitHub
@@ -101,7 +102,9 @@ def setup_logging(verbose):
             logger.propagate = False
 
 
-async def cmd_synchronize(projects, config, verbose=0, dry_run=False, synchronous=False):
+async def cmd_synchronize(
+    projects, config, verbose=0, dry_run=False, synchronous=False, full_sync=False
+):
     """This is the main cli. Please use --help on how to use it."""
     with open(config, "rb") as fp:
         settings = tomllib.load(fp)
@@ -186,6 +189,58 @@ async def cmd_synchronize(projects, config, verbose=0, dry_run=False, synchronou
                 dry=dry_run,
                 synchronous=synchronous,
             )
+        elif project["method"] == "tracker_twoway":
+            tracker_kind = project.get("tracker")
+            if not tracker_kind:
+                tracker_kind = "bugzilla" if project.get("bugzilla_base") else "github"
+
+            if tracker_kind == "bugzilla":
+                tracker = await Bugzilla.create(
+                    base_url=project["bugzilla_base"],
+                    token=os.environ["BUGZILLA_TOKEN"],
+                    phab_token=os.environ["PHAB_TOKEN"],
+                    dry=dry_run or project.get("tracker_dry_run", False),
+                    user_map=user_map.get("bugzilla") or {},
+                    property_names=project.get("properties", {}),
+                )
+            elif tracker_kind == "github":
+                tracker = await GitHub.create(
+                    token=os.environ["GITHUB_TOKEN"],
+                    repositories=project["repositories"],
+                    dry=dry_run or project.get("tracker_dry_run", False),
+                    user_map=user_map.get("github") or {},
+                    milestones_issue_type=project.get("milestones_issue_type", None),
+                    property_names=project.get("properties", {}),
+                )
+            else:
+                raise Exception(f"Unknown tracker type {tracker_kind}")
+
+            await synchronize_twoway(
+                project_key=key,
+                tracker=tracker,
+                notion_token=os.environ["NOTION_TOKEN"],
+                milestones_id=project["notion_milestones_id"],
+                tasks_id=project["notion_tasks_id"],
+                sprint_id=project.get("notion_sprints_id", None),
+                milestones_body_sync=project.get("milestones_body_sync", False),
+                milestones_body_sync_if_empty=project.get("milestones_body_sync_if_empty", False),
+                milestones_create_from_tracker=False,
+                tasks_body_sync=project.get("tasks_body_sync", False),
+                milestones_tracker_prefix=project.get("milestones_tracker_prefix", ""),
+                milestones_extra_label=project.get("milestones_extra_label", ""),
+                milestones_issue_type=project.get("milestones_issue_type", None),
+                tasks_notion_prefix=project.get("tasks_notion_prefix", ""),
+                team_id=project.get("notion_team_id"),
+                team_association=project.get("notion_associated_team"),
+                dry=dry_run,
+                synchronous=synchronous,
+                incremental_lookback_days=project.get("incremental_lookback_days", 7),
+                tasks_tracker_to_notion=project.get("tasks_tracker_to_notion", True),
+                tasks_notion_to_tracker=project.get("tasks_notion_to_tracker", False),
+                milestones_tracker_to_notion=project.get("milestones_tracker_to_notion", False),
+                milestones_notion_to_tracker=project.get("milestones_notion_to_tracker", True),
+                full_sync=full_sync,
+            )
         elif project["method"] == "github_labels":
             tracker = await GitHub.create(
                 token=os.environ["GITHUB_TOKEN"],
@@ -264,6 +319,12 @@ async def async_main():
         help="Run requests in order, for debugging",
     )
     parser.add_argument(
+        "--full-sync",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Disable incremental mode and synchronize all linked records for supported engines",
+    )
+    parser.add_argument(
         "-n",
         "--dry-run",
         action=argparse.BooleanOptionalAction,
@@ -294,5 +355,6 @@ async def async_main():
                 verbose=args.verbose,
                 dry_run=args.dry_run,
                 synchronous=args.synchronous,
+                full_sync=args.full_sync,
             )
         )

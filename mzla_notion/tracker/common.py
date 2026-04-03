@@ -40,6 +40,7 @@ class Issue(IssueRef):
     reviewers: set = field(default_factory=set)
     notion_url: str = ""
     created_date: datetime.datetime = None
+    updated_date: datetime.datetime = None
     closed_date: datetime.datetime = None
     start_date: datetime.date = None
     end_date: datetime.date = None
@@ -180,6 +181,18 @@ class IssueTracker:
         """Add additional tasks to the collected tasks for sync."""
         pass
 
+    async def update_milestone_issue(self, old_issue, new_issue):
+        """Update a milestone issue on the tracker."""
+        raise NotImplementedError
+
+    async def update_task_issue(self, old_issue, new_issue):
+        """Update a task issue on the tracker.
+
+        By default this reuses milestone update behavior. Trackers may override this to avoid
+        milestone-specific side effects.
+        """
+        await self.update_milestone_issue(old_issue, new_issue)
+
     def is_repo_allowed(self, repo):
         """If the repository is allowed as per repository setup."""
         return True
@@ -204,6 +217,25 @@ class IssueTracker:
         """Get all issues in all asscoiated repositories."""
         if False:
             yield "hack"
+
+    async def get_recent_issues_by_repo(self, since, sub_issues=False):
+        """Get recently updated issues grouped by repository.
+
+        The return value is a mapping:
+            { "<org>/<repo>" or "<bugzilla-host>": { "<id>": Issue } }
+        """
+        repos = {}
+        try:
+            iterator = self.get_all_issues(sub_issues=sub_issues)
+        except TypeError:
+            iterator = self.get_all_issues()
+
+        async for issue in iterator:
+            if issue.updated_date and since and issue.updated_date < since:
+                continue
+            repos.setdefault(issue.repo, {})[issue.id] = issue
+
+        return repos
 
 
 class UserMap:
