@@ -288,6 +288,66 @@ class GitHub(IssueTracker, GitHubFixups):
             self._update_issue_labels(old_issue, new_issue),
         )
 
+    async def create_task_issue_from_notion(self, parent_issue, title, description="", assignees=None, labels=None):
+        """Create a GitHub issue as a task from Notion data."""
+        if not getattr(parent_issue, "gql", None):
+            raise NotImplementedError("GitHub task create requires a resolved parent issue")
+        if self.dry:
+            logger.info("Dry run: skipping GitHub task creation from Notion")
+            return None
+
+        op = Operation(schema.mutation_type)
+        input_data = {
+            "repository_id": parent_issue.gql.repository.id,
+            "parent_issue_id": parent_issue.gql.id,
+            "title": title,
+            "body": description or "",
+        }
+
+        assignee_ids = [assignee.dbid_user for assignee in (assignees or []) if getattr(assignee, "dbid_user", None)]
+        if assignee_ids:
+            input_data["assignee_ids"] = assignee_ids
+
+        created = op.create_issue(input=input_data)
+        issue_field_ops(created.issue)
+
+        data = await self.endpoint(op)
+        issue = (op + data).create_issue.issue
+        return await self._parse_issue(issue, sub_issues=False)
+
+    def _state_bucket(self, state):
+        return "closed" if state in self.property_names["notion_closed_states"] else "open"
+
+    def should_update_task_issue(self, old_issue, new_issue):
+        """Return whether a GitHub task issue requires an update mutation."""
+        return any(
+            [
+                new_issue.title != old_issue.title,
+                new_issue.description != old_issue.description,
+                new_issue.assignees != old_issue.assignees,
+                new_issue.labels != old_issue.labels,
+                self._state_bucket(new_issue.state) != self._state_bucket(old_issue.state),
+            ]
+        )
+
+    def should_update_milestone_issue(self, old_issue, new_issue):
+        """Return whether a GitHub milestone issue requires an update mutation."""
+        has_milestone_project = old_issue.repo in getattr(self, "github_milestones_projects", {})
+        return any(
+            [
+                new_issue.title != old_issue.title,
+                new_issue.description != old_issue.description,
+                new_issue.assignees != old_issue.assignees,
+                new_issue.labels != old_issue.labels,
+                new_issue.priority != old_issue.priority,
+                new_issue.start_date != old_issue.start_date,
+                new_issue.end_date != old_issue.end_date,
+                new_issue.issue_type != old_issue.issue_type,
+                self._state_bucket(new_issue.state) != self._state_bucket(old_issue.state),
+                has_milestone_project and new_issue.notion_url != old_issue.notion_url,
+            ]
+        )
+
     async def _update_issue_basic(self, old_issue, new_issue):
         matches = True
         for prop in ["title", "state", "description"]:
