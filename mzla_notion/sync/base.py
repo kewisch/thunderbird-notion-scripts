@@ -327,7 +327,6 @@ class BaseSync:
                 url = url[0]["external"]["url"] if len(url) else ""
 
             ref = self.tracker.parse_issueref(url)
-            print("AAA", url, ref)
 
             if ref and self.tracker.is_repo_allowed(ref.repo):
                 repos[ref.repo][ref.id] = block

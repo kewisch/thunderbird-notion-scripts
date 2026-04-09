@@ -41,6 +41,7 @@ class TwoWayTestTracker(IssueTracker):
         self.recent_ids = set(recent_ids or [])
         self.updated_milestones = []
         self.updated_tasks = []
+        self.created_tasks = []
 
     def parse_issueref(self, ref):
         parts = ref.split("/")
@@ -68,9 +69,28 @@ class TwoWayTestTracker(IssueTracker):
     async def update_task_issue(self, old_issue, new_issue):
         self.updated_tasks.append((old_issue, new_issue))
 
+    async def create_task_issue_from_notion(self, parent_issue, title, description="", assignees=None, labels=None):
+        self.created_tasks.append((parent_issue, title))
+        return Issue(
+            repo=parent_issue.repo,
+            id=f"c{len(self.created_tasks)}",
+            parents=[IssueRef(repo=parent_issue.repo, id=parent_issue.id)],
+            title=title,
+            description=description,
+            state="Backlog",
+            priority="P2",
+            assignees=set(),
+            labels=set(),
+            url=f"https://example.com/{parent_issue.repo}/c{len(self.created_tasks)}",
+            created_date=datetime.datetime(2025, 1, 1, tzinfo=datetime.timezone.utc),
+            updated_date=datetime.datetime(2025, 1, 1, tzinfo=datetime.timezone.utc),
+            sub_issues=[],
+        )
+
 
 class TwoWaySyncTest(BaseTestCase):
     async def _run_sync(self, tracker, **kwargs):
+        dry = kwargs.pop("dry", False)
         sync = TrackerTwoWaySync(
             project_key="twoway",
             tracker=tracker,
@@ -78,7 +98,7 @@ class TwoWaySyncTest(BaseTestCase):
             milestones_id="milestones_id",
             tasks_id="tasks_id",
             tasks_notion_prefix="[prefix] ",
-            dry=False,
+            dry=dry,
             **kwargs,
         )
         await sync.synchronize()
@@ -157,6 +177,158 @@ class TwoWaySyncTest(BaseTestCase):
 
         # Tie fallback: tracker for tasks, notion for milestones
         self.assertEqual(len(tracker.updated_tasks), 0)
+        self.assertGreaterEqual(len(tracker.updated_milestones), 1)
+
+    async def test_tracker_to_notion_task_create_requires_parent(self):
+        tracker = TwoWayTestTracker(
+            issues=[
+                self._issue(
+                    "123", updated=datetime.datetime(2025, 1, 1, tzinfo=datetime.timezone.utc), title="Milestone"
+                ),
+                self._issue(
+                    "500",
+                    updated=datetime.datetime(2025, 1, 1, tzinfo=datetime.timezone.utc),
+                    parents=[IssueRef(repo="repo", id="123")],
+                    title="New Child",
+                ),
+                self._issue("501", updated=datetime.datetime(2025, 1, 1, tzinfo=datetime.timezone.utc), title="Orphan"),
+            ],
+            recent_ids=[("repo", "500"), ("repo", "501")],
+        )
+
+        await self._run_sync(
+            tracker,
+            tasks_tracker_to_notion=True,
+            tasks_tracker_to_notion_create=True,
+            tasks_notion_to_tracker=False,
+            full_sync=False,
+        )
+
+        self.assertEqual(self.respx.routes["pages_create"].calls.call_count, 1)
+
+    async def test_tracker_to_notion_milestone_create(self):
+        tracker = TwoWayTestTracker(
+            issues=[
+                self._issue(
+                    "999",
+                    updated=datetime.datetime(2025, 1, 1, tzinfo=datetime.timezone.utc),
+                    title="[meta] New Milestone",
+                ),
+            ],
+            recent_ids=[("repo", "999")],
+        )
+
+        await self._run_sync(
+            tracker,
+            milestones_tracker_to_notion=True,
+            milestones_tracker_to_notion_create=True,
+            milestones_notion_to_tracker=False,
+            tasks_tracker_to_notion=False,
+            full_sync=False,
+        )
+
+        self.assertEqual(self.respx.routes["pages_create"].calls.call_count, 1)
+
+    async def test_tracker_to_notion_milestone_create_dry_run(self):
+        tracker = TwoWayTestTracker(
+            issues=[
+                self._issue(
+                    "998",
+                    updated=datetime.datetime(2025, 1, 1, tzinfo=datetime.timezone.utc),
+                    title="[meta] Dry Run Milestone",
+                ),
+            ],
+            recent_ids=[("repo", "998")],
+        )
+
+        await self._run_sync(
+            tracker,
+            milestones_tracker_to_notion=True,
+            milestones_tracker_to_notion_create=True,
+            milestones_notion_to_tracker=False,
+            tasks_tracker_to_notion=False,
+            full_sync=False,
+            dry=True,
+        )
+
+        # NotionDatabase.create_page() returns a fake dry page; no remote create call is made.
+        self.assertEqual(self.respx.routes["pages_create"].calls.call_count, 0)
+
+    async def test_notion_to_tracker_task_create(self):
+        # Add an unlinked active Notion task linked to milestone page 123.
+        self.notion_handler.tasks_handler.pages.append(
+            {
+                "object": "page",
+                "id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+                "created_time": "2025-01-01T00:00:00.000Z",
+                "last_edited_time": "2025-01-01T00:00:00.000Z",
+                "url": "https://notion.so/example/new-task",
+                "properties": {
+                    "Title": {
+                        "id": "title",
+                        "type": "title",
+                        "title": [
+                            {
+                                "type": "text",
+                                "text": {"content": "Create me"},
+                                "plain_text": "Create me",
+                            }
+                        ],
+                    },
+                    "Status": {
+                        "id": "st",
+                        "type": "status",
+                        "status": {"name": "Backlog"},
+                    },
+                    "Issue Link": {"type": "files", "files": []},
+                    "Project": {
+                        "type": "relation",
+                        "relation": [{"id": "726fac28-6b63-48ca-90ec-0066be1a2755"}],
+                    },
+                },
+            }
+        )
+
+        tracker = TwoWayTestTracker(
+            issues=[
+                self._issue(
+                    "123", updated=datetime.datetime(2025, 1, 1, tzinfo=datetime.timezone.utc), title="Milestone"
+                ),
+            ],
+            recent_ids=[("repo", "123")],
+        )
+
+        await self._run_sync(
+            tracker,
+            tasks_tracker_to_notion=False,
+            tasks_notion_to_tracker=True,
+            tasks_notion_to_tracker_create=True,
+            full_sync=True,
+        )
+
+        self.assertEqual(len(tracker.created_tasks), 1)
+        self.assertGreaterEqual(self.respx.routes["pages_update"].calls.call_count, 1)
+        tasks_query_calls = [
+            call
+            for call in self.respx.routes["db_query"].calls
+            if call.request.url.path == "/v1/databases/tasks_id/query"
+        ]
+        self.assertEqual(len(tasks_query_calls), 1)
+
+    async def test_unsupported_milestone_notion_to_tracker_create_is_ignored(self):
+        tracker = TwoWayTestTracker(
+            issues=[self._issue("123", updated=datetime.datetime(2025, 1, 1, tzinfo=datetime.timezone.utc))],
+            recent_ids=[("repo", "123")],
+        )
+
+        await self._run_sync(
+            tracker,
+            milestones_notion_to_tracker=True,
+            milestones_notion_to_tracker_create=True,
+            full_sync=True,
+        )
+
+        # still only the normal milestone update behavior, no create attempts
         self.assertGreaterEqual(len(tracker.updated_milestones), 1)
 
 

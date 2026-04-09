@@ -20,9 +20,14 @@ incremental_lookback_days = 7
 
 # Two-way directions (defaults shown explicitly)
 tasks_tracker_to_notion = true
-tasks_notion_to_tracker = false
+tasks_notion_to_tracker = true
 milestones_tracker_to_notion = true
 milestones_notion_to_tracker = true
+
+tasks_tracker_to_notion_create = true
+tasks_notion_to_tracker_create = true
+milestones_tracker_to_notion_create = false
+milestones_notion_to_tracker_create = false
 
 [sync.services.repositories]
 
@@ -63,7 +68,7 @@ notion_issue_field = "Bug URL"
 notion_default_open_state = "Backlog"
 notion_inprogress_state = "In progress"
 notion_closed_states = ["Done", "Canceled"]
-notion_tasks_repository = "Product (Services)"
+#notion_tasks_repository = "Product (Services)"
 
 
 #[sync.bugzilla]
