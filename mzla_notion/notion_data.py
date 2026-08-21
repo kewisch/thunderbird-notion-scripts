@@ -231,15 +231,16 @@ class NotionDatabase:
         # Change was made if there was some form of update
         return len(update_kwargs) > 0
 
-    def page_diff(self, datadict: Dict[str, Any], page: Dict[str, Any]) -> bool:
+    def page_diff(self, datadict: Dict[str, Any], page: Dict[str, Any], log: bool = True) -> bool:
         """Return true or false based on whether the Notion `datadict` matches `page` or not."""
         cur_props = self.properties
 
         # The status property needs special handling if it exists since it isn't a registered property.
         if datadict.get("Status") and datadict["Status"] != page["properties"]["Status"]["status"]["name"]:
-            logger.debug(
-                f"\tStatus changed from {page['properties']['Status']['status']['name']} to {datadict['Status']}"
-            )
+            if log:
+                logger.debug(
+                    f"\tStatus changed from {page['properties']['Status']['status']['name']} to {datadict['Status']}"
+                )
             return True
         # Loop over all properties and see if any are different.
         changed = False
@@ -250,7 +251,8 @@ class NotionDatabase:
             old_prop = page["properties"].get(prop_name, {})
             if prop_name in cur_props and cur_props[prop_name].is_prop_diff(old_prop, prop_value):
                 old_prop_value = old_prop.get(old_prop.get("type"))
-                logger.debug(f"{prop_name} on {page['url']} changing from {old_prop_value} to {prop_value}")
+                if log:
+                    logger.debug(f"{prop_name} on {page['url']} changing from {old_prop_value} to {prop_value}")
                 changed = True
         return changed
 

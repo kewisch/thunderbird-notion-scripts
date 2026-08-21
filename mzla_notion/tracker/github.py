@@ -171,6 +171,13 @@ class GitHub(IssueTracker, GitHubFixups):
                 for repo in settings["repositories"]:
                     self.github_milestones_projects[repo] = milestones_project
 
+        logger.debug(
+            "GitHub tracker configured repositories=%s task_projects=%s milestone_projects=%s",
+            ", ".join(sorted(self.allowed_repositories)) or "(none)",
+            ", ".join(project.database_id for project in self.all_tasks_projects) or "(none)",
+            ", ".join(project.database_id for project in self.all_milestones_projects) or "(none)",
+        )
+
     def parse_issueref(self, ref, issues="issues"):
         """Parse an issue identifier (e.g. github url) to an IssueRef."""
         # https://github.com/thunderbird/repo/issues/1234
@@ -808,6 +815,8 @@ class GitHub(IssueTracker, GitHubFixups):
     async def _get_repo_issues(self, reporef, sub_issues=False, issue_type=None, since=None):
         has_next_page = True
         cursor = None
+        page_count = 0
+        issue_count = 0
 
         orgname, reponame = reporef.split("/")
 
@@ -839,17 +848,30 @@ class GitHub(IssueTracker, GitHubFixups):
 
             data = await self.endpoint(op)
             repo = (op + data).repository
+            page_count += 1
 
             for ghissue in repo.issues.nodes:
+                issue_count += 1
                 yield await self._parse_issue(ghissue, sub_issues)
 
             has_next_page = repo.issues.page_info.has_next_page
             cursor = repo.issues.page_info.end_cursor
 
+        logger.debug(
+            "GitHub recent issue query repo=%s issue_type=%s since=%s pages=%d issues=%d",
+            reporef,
+            issue_type or "(any)",
+            since or "(none)",
+            page_count,
+            issue_count,
+        )
+
     async def get_recent_issues_by_repo(self, since, sub_issues=False):
         """Get recently updated issues grouped by repository."""
         repos = defaultdict(dict)
         since_iso = since.strftime("%Y-%m-%dT%H:%M:%SZ") if since else None
+        repo_issue_count = 0
+        project_issue_count = 0
 
         merged = aiostream.stream.merge(
             *[
@@ -861,6 +883,29 @@ class GitHub(IssueTracker, GitHubFixups):
         async with merged.stream() as streamer:
             async for issue in streamer:
                 repos[issue.repo][issue.id] = issue
+                repo_issue_count += 1
+
+        projects = {
+            project.database_id: project
+            for project in itertools.chain(self.all_tasks_projects, self.all_milestones_projects)
+        }
+        for project in projects.values():
+            async for ghissue in project.get_issues_updated_since(since, self.allowed_repositories):
+                issue = await self._parse_issue(ghissue, sub_issues)
+                repos[issue.repo][issue.id] = issue
+                project_issue_count += 1
+
+        logger.info(
+            "GitHub recent issues since=%s repo_matches=%d project_item_matches=%d unique=%d",
+            since_iso or "(none)",
+            repo_issue_count,
+            project_issue_count,
+            sum(len(issues) for issues in repos.values()),
+        )
+        logger.debug(
+            "GitHub recent issues by repo: %s",
+            ", ".join(f"{repo}={len(issues)}" for repo, issues in sorted(repos.items())) or "(none)",
+        )
 
         return repos
 
