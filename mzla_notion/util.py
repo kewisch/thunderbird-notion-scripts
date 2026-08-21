@@ -6,10 +6,13 @@ import logging
 import os
 import time
 import datetime
+import email.utils
 import httpx
 import dataclasses
 import asyncio
 import http.client
+import json
+import math
 import random
 import sgqlc.operation
 from urllib.parse import urlsplit
@@ -239,8 +242,14 @@ class AsyncRetryingClient(httpx.AsyncClient):
             return True
 
         if response and response.status_code == 429:
-            seconds = int(response.headers.get("Retry-After", 10))
-            logger.info(f"Sleeping {seconds} seconds due to rate limiting")
+            seconds, retry_source = self._rate_limit_sleep_seconds(response.headers, default=10)
+            self._log_rate_limit_sleep(seconds, "HTTP 429 rate limit", retry_source, response.headers)
+            await rate_limit_gate.engage(seconds)
+            return True
+
+        if response and (error := self._response_graphql_rate_limit_error(response)):
+            seconds, retry_source = self._rate_limit_sleep_seconds(response.headers, default=60)
+            self._log_rate_limit_sleep(seconds, "GitHub GraphQL rate limit", retry_source, response.headers, error)
             await rate_limit_gate.engage(seconds)
             return True
 
@@ -251,20 +260,14 @@ class AsyncRetryingClient(httpx.AsyncClient):
 
         if exception and isinstance(exception, sgqlc.operation.GraphQLErrors):
             for error in exception.errors:
-                if (error["status"] or 0) // 100 == 5:
-                    logger.info(f"Sleeping {self.RETRY_TIMEOUT} seconds due to {error['status']} response")
+                if (error.get("status") or 0) // 100 == 5:
+                    logger.info(f"Sleeping {self.RETRY_TIMEOUT} seconds due to {error.get('status')} response")
                     await rate_limit_gate.engage(self.RETRY_TIMEOUT)
                     return True
-                if "API rate limit already exceeded" in error["message"]:
-                    now = int(time.time())
-                    timestamp = int(response.headers.get("x-ratelimit-reset", 0))
-                    if timestamp:
-                        seconds = now - timestamp
-                    else:
-                        # GitHub would like a timeout of at least 60 seconds
-                        seconds = 60
-
-                    logger.info(f"Sleeping {seconds} seconds due to GraphQL rate limit")
+                if "API rate limit already exceeded" in error.get("message", ""):
+                    headers = error.get("headers") or (response.headers if response else {})
+                    seconds, retry_source = self._rate_limit_sleep_seconds(headers, default=60)
+                    self._log_rate_limit_sleep(seconds, "GraphQL rate limit", retry_source, headers, error)
                     await rate_limit_gate.engage(seconds)
                     return True
 
@@ -274,6 +277,103 @@ class AsyncRetryingClient(httpx.AsyncClient):
             return True
 
         return False
+
+    @staticmethod
+    def _header_value(headers, name):
+        """Return a header value from either httpx.Headers or a plain dict."""
+        if not headers:
+            return None
+
+        try:
+            value = headers.get(name)
+            if value is not None:
+                return value
+        except AttributeError:
+            pass
+
+        lower_name = name.lower()
+        for key, value in headers.items():
+            if key.lower() == lower_name:
+                return value
+
+        return None
+
+    @classmethod
+    def _parse_retry_after(cls, headers, now):
+        retry_after = cls._header_value(headers, "retry-after")
+        if retry_after is None:
+            return None
+
+        try:
+            return max(0, int(retry_after))
+        except ValueError:
+            try:
+                retry_at = email.utils.parsedate_to_datetime(retry_after)
+            except (TypeError, ValueError):
+                logger.debug("Ignoring invalid retry-after header: %s", retry_after)
+                return None
+            if retry_at.tzinfo is None:
+                retry_at = retry_at.replace(tzinfo=datetime.timezone.utc)
+            return max(0, math.ceil(retry_at.timestamp() - now))
+
+    @classmethod
+    def _rate_limit_sleep_seconds(cls, headers, default=60, now=None):
+        """Calculate how long to sleep from rate-limit headers."""
+        now = time.time() if now is None else now
+        if (seconds := cls._parse_retry_after(headers, now)) is not None:
+            return seconds, "retry-after"
+
+        reset = cls._header_value(headers, "x-ratelimit-reset")
+        if reset:
+            try:
+                return max(0, math.ceil(int(reset) - now)), "x-ratelimit-reset"
+            except ValueError:
+                logger.debug("Ignoring invalid x-ratelimit-reset header: %s", reset)
+
+        return default, "default"
+
+    @classmethod
+    def _response_graphql_rate_limit_error(cls, response):
+        content_type = response.headers.get("content-type", "")
+        if "json" not in content_type:
+            return None
+
+        try:
+            data = response.json()
+        except json.JSONDecodeError:
+            return None
+
+        for error in data.get("errors", []) if isinstance(data, dict) else []:
+            message = error.get("message", "")
+            if "API rate limit already exceeded" in message:
+                return error
+
+        return None
+
+    @classmethod
+    def _log_rate_limit_sleep(cls, seconds, reason, retry_source, headers, error=None):
+        reset = cls._header_value(headers, "x-ratelimit-reset")
+        reset_at = None
+        if reset:
+            try:
+                reset_at = datetime.datetime.fromtimestamp(int(reset), datetime.UTC).isoformat()
+            except ValueError:
+                reset_at = f"invalid:{reset}"
+
+        logger.info(
+            "Sleeping %s seconds due to %s (retry_source=%s, reset_at=%s, limit=%s, remaining=%s, used=%s, resource=%s, retry_after=%s)",
+            seconds,
+            reason,
+            retry_source,
+            reset_at,
+            cls._header_value(headers, "x-ratelimit-limit"),
+            cls._header_value(headers, "x-ratelimit-remaining"),
+            cls._header_value(headers, "x-ratelimit-used"),
+            cls._header_value(headers, "x-ratelimit-resource"),
+            cls._header_value(headers, "retry-after"),
+        )
+        if error:
+            logger.debug("Rate-limit GraphQL error: %s", error.get("message"))
 
 
 class GitHubActionsFormatter(logging.Formatter):
