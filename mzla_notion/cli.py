@@ -143,6 +143,12 @@ async def cmd_synchronize(
                 logger.warning(f"Skipping project {key} because it is disabled")
             continue
 
+        effective_dry_run = bool(dry_run)
+        if project.get("dry", False):
+            if not effective_dry_run:
+                logger.info(f"Forcing a dry run for project {key} via configuration, no changes will be made")
+            effective_dry_run = True
+
         logger.info(f"Synchronizing project {key}...")
 
         if project["method"].endswith("_project"):
@@ -151,7 +157,7 @@ async def cmd_synchronize(
                     base_url=project["bugzilla_base"],
                     token=os.environ["BUGZILLA_TOKEN"],
                     phab_token=os.environ["PHAB_TOKEN"],
-                    dry=dry_run or project.get("tracker_dry_run", False),
+                    dry=effective_dry_run or project.get("tracker_dry_run", False),
                     user_map=user_map.get("bugzilla") or {},
                     phabricator_user_map=user_map.get("phabricator") or {},
                     property_names=project.get("properties", {}),
@@ -160,7 +166,7 @@ async def cmd_synchronize(
                 tracker = await GitHub.create(
                     token=os.environ["GITHUB_TOKEN"],
                     repositories=project["repositories"],
-                    dry=dry_run or project.get("tracker_dry_run", False),
+                    dry=effective_dry_run or project.get("tracker_dry_run", False),
                     user_map=user_map.get("github") or {},
                     milestones_issue_type=project.get("milestones_issue_type", None),
                     epics_issue_type=project.get("epics_issue_type", "Epic"),
@@ -192,7 +198,7 @@ async def cmd_synchronize(
                 tasks_notion_prefix=project.get("tasks_notion_prefix", ""),
                 team_id=project.get("notion_team_id"),
                 team_association=project.get("notion_associated_team"),
-                dry=dry_run,
+                dry=effective_dry_run,
                 synchronous=synchronous,
             )
         elif project["method"] == "tracker_twoway":
@@ -205,7 +211,7 @@ async def cmd_synchronize(
                     base_url=project["bugzilla_base"],
                     token=os.environ["BUGZILLA_TOKEN"],
                     phab_token=os.environ["PHAB_TOKEN"],
-                    dry=dry_run or project.get("tracker_dry_run", False),
+                    dry=effective_dry_run or project.get("tracker_dry_run", False),
                     user_map=user_map.get("bugzilla") or {},
                     property_names=project.get("properties", {}),
                 )
@@ -213,7 +219,7 @@ async def cmd_synchronize(
                 tracker = await GitHub.create(
                     token=os.environ["GITHUB_TOKEN"],
                     repositories=project["repositories"],
-                    dry=dry_run or project.get("tracker_dry_run", False),
+                    dry=effective_dry_run or project.get("tracker_dry_run", False),
                     user_map=user_map.get("github") or {},
                     milestones_issue_type=project.get("milestones_issue_type", None),
                     property_names=project.get("properties", {}),
@@ -238,7 +244,7 @@ async def cmd_synchronize(
                 tasks_notion_prefix=project.get("tasks_notion_prefix", ""),
                 team_id=project.get("notion_team_id"),
                 team_association=project.get("notion_associated_team"),
-                dry=dry_run,
+                dry=effective_dry_run,
                 synchronous=synchronous,
                 incremental_lookback_seconds=(
                     lookback if lookback is not None else project.get("incremental_lookback_seconds", 7 * 24 * 60 * 60)
@@ -257,7 +263,7 @@ async def cmd_synchronize(
             tracker = await GitHub.create(
                 token=os.environ["GITHUB_TOKEN"],
                 repositories=project["repositories"],
-                dry=dry_run or project.get("tracker_dry_run", False),
+                dry=effective_dry_run or project.get("tracker_dry_run", False),
                 user_map=user_map.get("github") or {},
                 property_names=project.get("properties", {}),
             )
@@ -277,7 +283,7 @@ async def cmd_synchronize(
                 milestone_label_prefix=project.get("milestone_label_prefix", "M: "),
                 team_id=project.get("notion_team_id"),
                 team_association=project.get("notion_associated_team"),
-                dry=dry_run,
+                dry=effective_dry_run,
                 synchronous=synchronous,
             )
         elif project["method"] == "project_board":
@@ -286,7 +292,7 @@ async def cmd_synchronize(
                 notion_token=notion_token,
                 board_id=project["notion_board_id"],
                 properties=project.get("properties", {}),
-                dry=dry_run,
+                dry=effective_dry_run,
                 synchronous=synchronous,
             )
         elif project["method"] == "github_deployments":
@@ -298,7 +304,7 @@ async def cmd_synchronize(
                 expected_columns=project["expected_columns"],
                 stage_column=project["stage_column"],
                 prod_column=project["prod_column"],
-                dry=dry_run,
+                dry=effective_dry_run,
             )
         else:
             raise Exception(f"Unknown synchronization {project['method']}")
