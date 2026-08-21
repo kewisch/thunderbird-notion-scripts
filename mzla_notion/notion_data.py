@@ -69,6 +69,25 @@ def _normalize_notion_date_compare_value(value: Any) -> Any:
     return value
 
 
+def _format_notion_date_update_value(value: Any) -> Any:
+    """Format date-like values for Notion updates using the same precision as comparisons."""
+    value = _parse_notion_date_value(value)
+
+    if value is None:
+        return None
+
+    if isinstance(value, datetime.datetime):
+        if value.tzinfo is not None:
+            value = value.astimezone(datetime.timezone.utc)
+        value = value.replace(second=0, microsecond=0)
+        return value.isoformat(timespec="minutes")
+
+    if isinstance(value, datetime.date):
+        return value.isoformat()
+
+    return value
+
+
 @dataclass
 class NotionProperty:
     """Defines a generic Notion database property.
@@ -435,8 +454,8 @@ def dates(name: str) -> NotionProperty:
             return {
                 name: {
                     "date": {
-                        "start": content["start"].isoformat() if content.get("start") else None,
-                        "end": content["end"].isoformat() if content.get("end") else None,
+                        "start": _format_notion_date_update_value(content.get("start")),
+                        "end": _format_notion_date_update_value(content.get("end")),
                     }
                 }
             }
@@ -462,7 +481,7 @@ def date(name: str) -> NotionProperty:
 
     def _update(content: datetime.datetime) -> Dict[str, Any]:
         if content:
-            return {name: {"date": {"start": content.isoformat()}}}
+            return {name: {"date": {"start": _format_notion_date_update_value(content)}}}
         else:
             return {name: {"date": None}}
 

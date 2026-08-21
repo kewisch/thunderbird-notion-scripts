@@ -679,7 +679,7 @@ class ProjectSyncTest(BaseTestCase):
                 json.loads(self.respx.routes["pages_update"].calls[0].request.content),
                 {
                     "properties": {
-                        "Created": {"date": {"start": "2025-03-04T05:00:00+00:00"}},
+                        "Created": {"date": {"start": "2025-03-04T05:00+00:00"}},
                         "Closed": {"date": None},
                         "Dates": {"date": {"start": "2025-01-08", "end": "2025-01-15"}},
                         "Issue Link": {
@@ -709,7 +709,7 @@ class ProjectSyncTest(BaseTestCase):
 
             content = json.loads(self.respx.routes["pages_update"].calls[0].request.content)
 
-            self.assertEqual(content["properties"]["Dates"]["date"]["start"], "2025-04-01T00:00:00+00:00")
+            self.assertEqual(content["properties"]["Dates"]["date"]["start"], "2025-04-01T00:00+00:00")
             self.assertEqual(content["properties"]["Dates"]["date"]["end"], "2025-04-07")
 
     async def test_task_no_parent(self):

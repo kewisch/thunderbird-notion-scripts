@@ -112,7 +112,7 @@ class TrackerTwoWaySync(BaseSync):
         value = page.get("last_edited_time")
         if not value:
             return None
-        return datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return datetime.datetime.fromisoformat(value.replace("Z", "+00:00")).replace(second=0, microsecond=0)
 
     def _format_timestamp(self, value):
         if not value:
@@ -151,6 +151,8 @@ class TrackerTwoWaySync(BaseSync):
             return None
 
         tracker_ts = tracker_issue.updated_date or tracker_issue.created_date
+        if tracker_ts:
+            tracker_ts = tracker_ts.replace(second=0, microsecond=0)
         notion_ts = self._page_timestamp(notion_page)
         fallback = "tracker_to_notion" if entity_kind == "task" else "notion_to_tracker"
 
@@ -506,6 +508,8 @@ class TrackerTwoWaySync(BaseSync):
 
     def _milestone_candidate_debug(self, issue, page):
         tracker_ts = issue.updated_date or issue.created_date
+        if tracker_ts:
+            tracker_ts = tracker_ts.replace(second=0, microsecond=0)
         notion_ts = self._page_timestamp(page)
         both_directions = self.milestones_tracker_to_notion and self.milestones_notion_to_tracker
         direction = self._pick_direction(
