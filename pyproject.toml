@@ -33,7 +33,7 @@ dev = [
 
 
 [project.scripts]
-mzla-notion = "mzla_notion:__main__"
+mzla-notion = "mzla_notion.__main__:main"
 
 [tool.uv]
 managed = true
