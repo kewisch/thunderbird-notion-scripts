@@ -207,6 +207,7 @@ class TrackerTwoWaySync(BaseSync):
                 logger.debug(f"  candidate: {candidate_debug}")
         else:
             logger.info(f"Unchanged milestone {tracker_issue.repo}#{tracker_issue.id}")
+        return changed
 
     async def synchronize_single_milestone(self, tracker_issue, page, skip_unchanged_msg=False, candidate_debug=None):
         """Synchronize a single Notion milestone to the issue tracker."""
@@ -263,10 +264,12 @@ class TrackerTwoWaySync(BaseSync):
 
             if not self.dry:
                 await self.tracker.update_milestone_issue(tracker_issue, new_issue)
+            return True
         elif not skip_unchanged_msg:
             logger.info(
                 f"Unchanged milestone {tracker_issue.id} - {tracker_issue.title} ({tracker_issue.url} / {new_issue.notion_url})"
             )
+        return False
 
     def _get_task_tracker_issue_from_notion(self, tracker_issue, page):
         title = self._get_richtext_prop(page, "notion_tasks_title", tracker_issue.title)
@@ -298,7 +301,7 @@ class TrackerTwoWaySync(BaseSync):
             parent_milestone_pages=parent_pages,
             old_page=page,
         )
-        return self.tasks_db.page_diff(notion_data, page)
+        return self.tasks_db.page_diff(notion_data, page, log=False)
 
     def _task_needs_tracker_update(self, tracker_issue, page):
         new_issue = self._get_task_tracker_issue_from_notion(tracker_issue, page)
@@ -311,8 +314,10 @@ class TrackerTwoWaySync(BaseSync):
             logger.info(f"Updating task {tracker_issue.repo}#{tracker_issue.id} from notion")
             if not self.dry:
                 await self.tracker.update_task_issue(tracker_issue, new_issue)
+            return True
         else:
             logger.info(f"Unchanged task {tracker_issue.repo}#{tracker_issue.id}")
+        return False
 
     def _collect_candidates(self, notion_refs, recent_refs, since):
         linked = set(notion_refs.keys())
@@ -505,6 +510,18 @@ class TrackerTwoWaySync(BaseSync):
                 if key in notion_milestone_refs:
                     continue
                 milestone_issues[key] = issue
+        elif self.milestones_tracker_to_notion:
+            skipped_milestones = [
+                (repo, issue_id)
+                for repo, issues in recent_tasks_by_repo.items()
+                for issue_id, issue in issues.items()
+                if (repo, issue_id) not in notion_milestone_refs and self._is_milestone_issue(issue)
+            ]
+            if skipped_milestones:
+                logger.info(
+                    "Skipping %d tracker->Notion milestone create candidates because milestones_tracker_to_notion_create is disabled",
+                    len(skipped_milestones),
+                )
 
     def _milestone_candidate_debug(self, issue, page):
         tracker_ts = issue.updated_date or issue.created_date
@@ -544,6 +561,7 @@ class TrackerTwoWaySync(BaseSync):
         return direction, debug
 
     async def _run_milestone_phase(self, milestone_issues, notion_milestone_refs, milestone_page_by_id, stats):
+        stat_tasks = []
         async with asyncio.TaskGroup() as tg:
             for key, issue in milestone_issues.items():
                 page = notion_milestone_refs.get(key)
@@ -554,6 +572,8 @@ class TrackerTwoWaySync(BaseSync):
                                 stats["milestones_create_skipped_unsupported_path"] += 1
                                 continue
                             page = await self._create_milestone_in_notion_from_tracker(issue)
+                            if not page:
+                                continue
                             notion_milestone_refs[key] = page
                             self._notion_milestone_issues.setdefault(issue.repo, {})[issue.id] = page
                             milestone_page_by_id[page["id"].replace("-", "")] = (issue.repo, issue.id, page)
@@ -567,11 +587,27 @@ class TrackerTwoWaySync(BaseSync):
                 direction, candidate_debug = self._milestone_candidate_debug(issue, page)
 
                 if direction == "tracker_to_notion":
-                    stats["milestones_updated_from_tracker"] += 1
-                    tg.create_task(self.synchronize_single_milestone_from_tracker(issue, page, candidate_debug))
+                    stat_tasks.append(
+                        (
+                            "milestones_updated_from_tracker",
+                            tg.create_task(
+                                self.synchronize_single_milestone_from_tracker(issue, page, candidate_debug)
+                            ),
+                        )
+                    )
                 elif direction == "notion_to_tracker":
-                    stats["milestones_updated_from_notion"] += 1
-                    tg.create_task(self.synchronize_single_milestone(issue, page, candidate_debug=candidate_debug))
+                    stat_tasks.append(
+                        (
+                            "milestones_updated_from_notion",
+                            tg.create_task(
+                                self.synchronize_single_milestone(issue, page, candidate_debug=candidate_debug)
+                            ),
+                        )
+                    )
+
+        for stat_key, task in stat_tasks:
+            if task.result():
+                stats[stat_key] += 1
 
     async def _create_tracker_task_from_notion(self, page, milestone_page_by_id, milestone_issues, stats):
         status = getnestedattr(lambda: self._get_prop(page, "notion_tasks_status")["name"], None)
@@ -662,23 +698,28 @@ class TrackerTwoWaySync(BaseSync):
     async def _run_task_phase(
         self, since, task_issues, notion_task_refs, milestone_page_by_id, milestone_issues, stats
     ):
+        stat_tasks = []
         async with asyncio.TaskGroup() as tg:
             for key, issue in task_issues.items():
+                if not self._is_task_issue(issue):
+                    logger.debug(
+                        "Skipping task sync %s#%s because it is not a task: %s",
+                        issue.repo,
+                        issue.id,
+                        self.tracker.task_issue_debug_info(
+                            issue,
+                            milestones_issue_type=self.milestones_issue_type,
+                            epics_issue_type=self.epics_issue_type,
+                        ),
+                    )
+                    continue
+
                 page = notion_task_refs.get(key)
                 if page is None:
                     if self.tasks_tracker_to_notion and self.tasks_tracker_to_notion_create:
-                        if not self._is_task_issue(issue):
-                            continue
-                        if self._find_task_parents(issue):
-                            stats["tasks_created_from_tracker"] += 1
-                            tg.create_task(self.synchronize_single_task(issue, None))
-                        else:
-                            stats["tasks_create_skipped_no_parent"] += 1
-                            logger.info(
-                                "Skipping task create %s#%s because no linked milestone parent exists",
-                                issue.repo,
-                                issue.id,
-                            )
+                        stat_tasks.append(
+                            ("tasks_created_from_tracker", tg.create_task(self.synchronize_single_task(issue, None)))
+                        )
                     continue
 
                 direction = self._pick_direction(
@@ -708,35 +749,50 @@ class TrackerTwoWaySync(BaseSync):
                         self._create_tracker_task_from_notion(page, milestone_page_by_id, milestone_issues, stats)
                     )
 
+        for stat_key, task in stat_tasks:
+            if task.result():
+                stats[stat_key] += 1
+
     def _log_sync_stats(self, task_linked_count, milestone_linked_count, task_skipped, milestone_skipped, stats):
+        logger.info("Two-way sync stats %-22s %8s %10s", "", "tasks", "milestones")
         logger.info(
-            "Two-way sync candidates tasks=%d milestones=%d skipped_tasks=%d skipped_milestones=%d",
+            "Two-way sync stats %-22s %8d %10d",
+            "linked",
             task_linked_count,
             milestone_linked_count,
+        )
+        logger.info(
+            "Two-way sync stats %-22s %8d %10d",
+            "skipped",
             task_skipped,
             milestone_skipped,
         )
         logger.info(
-            "Two-way sync stat tasks_updated_from_tracker=%d tasks_updated_from_notion=%d",
+            "Two-way sync stats %-22s %8d %10d",
+            "updated from tracker",
             stats["tasks_updated_from_tracker"],
-            stats["tasks_updated_from_notion"],
+            stats["milestones_updated_from_tracker"],
         )
         logger.info(
-            "Two-way sync stat milestones_updated_from_tracker=%d milestones_updated_from_notion=%d",
-            stats["milestones_updated_from_tracker"],
+            "Two-way sync stats %-22s %8d %10d",
+            "updated from notion",
+            stats["tasks_updated_from_notion"],
             stats["milestones_updated_from_notion"],
         )
         logger.info(
-            "Two-way sync stat tasks_created_from_tracker=%d tasks_created_from_notion=%d",
+            "Two-way sync stats %-22s %8d %10d",
+            "created from tracker",
             stats["tasks_created_from_tracker"],
-            stats["tasks_created_from_notion"],
-        )
-        logger.info(
-            "Two-way sync stat milestones_created_from_tracker=%d",
             stats["milestones_created_from_tracker"],
         )
         logger.info(
-            "Two-way sync stat tasks_create_skipped_no_parent=%d tasks_create_skipped_unsupported_path=%d tasks_create_link_back_retry=%d",
+            "Two-way sync stats %-22s %8d %10s",
+            "created from notion",
+            stats["tasks_created_from_notion"],
+            "-",
+        )
+        logger.info(
+            "Two-way sync stats task create skipped no_parent=%5d unsupported=%5d link_back_retry=%5d",
             stats["tasks_create_skipped_no_parent"],
             stats["tasks_create_skipped_unsupported_path"],
             stats["tasks_create_link_back_retry"],
@@ -747,6 +803,26 @@ class TrackerTwoWaySync(BaseSync):
         timestamp = datetime.datetime.now(datetime.UTC)
         since = timestamp - datetime.timedelta(seconds=self.incremental_lookback_seconds)
         self._task_discovery_since = since
+        logger.info(
+            "Two-way sync window full_sync=%s lookback_seconds=%d since=%s",
+            self.full_sync,
+            self.incremental_lookback_seconds,
+            self._format_timestamp(since),
+        )
+        logger.debug(
+            "Two-way sync directions tasks tracker->notion=%s notion->tracker=%s create tracker->notion=%s notion->tracker=%s",
+            self.tasks_tracker_to_notion,
+            self.tasks_notion_to_tracker,
+            self.tasks_tracker_to_notion_create,
+            self.tasks_notion_to_tracker_create,
+        )
+        logger.debug(
+            "Two-way sync directions milestones tracker->notion=%s notion->tracker=%s create tracker->notion=%s notion->tracker=%s",
+            self.milestones_tracker_to_notion,
+            self.milestones_notion_to_tracker,
+            self.milestones_tracker_to_notion_create,
+            self.milestones_notion_to_tracker_create,
+        )
 
         await self._async_init()
 
@@ -764,6 +840,8 @@ class TrackerTwoWaySync(BaseSync):
             fetch_since = since if not self.full_sync else datetime.datetime(1970, 1, 1, tzinfo=datetime.UTC)
             recent_tasks_by_repo = await self.tracker.get_recent_issues_by_repo(fetch_since, sub_issues=False)
             recent_milestones_by_repo = recent_tasks_by_repo
+        else:
+            logger.info("Two-way sync not fetching recent tracker issues because all tracker directions are disabled")
 
         notion_task_refs = {
             (repo, issue_id): page
@@ -780,6 +858,16 @@ class TrackerTwoWaySync(BaseSync):
         recent_milestone_keys = {
             (repo, issue_id) for repo, issues in recent_milestones_by_repo.items() for issue_id in issues
         }
+        recent_tracker_task_count = sum(
+            1 for issues in recent_tasks_by_repo.values() for issue in issues.values() if self._is_task_issue(issue)
+        )
+        logger.info(
+            "Two-way sync discovered linked Notion refs tasks=%d milestones=%d recent_tracker_refs=%d recent_tracker_tasks=%d",
+            len(notion_task_refs),
+            len(notion_milestone_refs),
+            len(recent_task_keys),
+            recent_tracker_task_count,
+        )
 
         task_candidates, task_linked_count, task_skipped = self._collect_candidates(
             notion_task_refs, recent_task_keys, since
@@ -790,6 +878,11 @@ class TrackerTwoWaySync(BaseSync):
 
         task_issues = await self._load_tracker_candidates(task_candidates, recent_tasks_by_repo)
         milestone_issues = await self._load_tracker_candidates(milestone_candidates, recent_milestones_by_repo)
+        logger.info(
+            "Two-way sync loaded tracker candidates tasks=%d milestones=%d",
+            len(task_issues),
+            len(milestone_issues),
+        )
 
         stats = self._new_stats()
 

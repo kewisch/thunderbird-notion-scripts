@@ -496,7 +496,7 @@ class BaseSync:
         """
         if tracker_issue.deeply_nested:
             logger.info(f"Skipping nested task {tracker_issue.repo}#{tracker_issue.id} - {tracker_issue.title}")
-            return
+            return False
 
         if page:
             old_issue_url = getnestedattr(
@@ -525,6 +525,7 @@ class BaseSync:
             logger.info(f"Adding new task {tracker_issue.id} - {tracker_issue.title}")
             logger.debug("\t" + str(notion_data))
             page = await self.tasks_db.create_page(notion_data)
+            changed = page is not None
 
             if not self.tasks_body_sync and self.TASK_BODY_WARNING:
                 # At least show the warning if not the full body
@@ -536,6 +537,8 @@ class BaseSync:
                 body = self.TASK_BODY_WARNING.format(self.tracker.name) + "\n\n" + body
 
             await self.tasks_db.replace_page_contents(page["id"], body)
+
+        return changed
 
     async def _async_init(self):
         async with asyncio.TaskGroup() as tg:
