@@ -136,10 +136,53 @@ class TwoWaySyncTest(BaseTestCase):
             recent_ids=[],
         )
 
-        await self._run_sync(tracker, full_sync=False, incremental_lookback_days=7)
+        await self._run_sync(tracker, full_sync=False, incremental_lookback_seconds=604800)
         self.assertEqual(len(tracker.updated_milestones), 0)
         self.assertEqual(len(tracker.updated_tasks), 0)
         self.assertEqual(self.respx.routes["pages_update"].calls.call_count, 0)
+
+    @freeze_time("2025-01-01T01:00:00Z", real_asyncio=True)
+    async def test_incremental_lookback_controls_tracker_updates(self):
+        async def run_sync(lookback):
+            tracker = TwoWayTestTracker(
+                issues=[
+                    self._issue(
+                        "345",
+                        updated=datetime.datetime(2025, 1, 1, 0, 0, tzinfo=datetime.timezone.utc),
+                        parents=[IssueRef(repo="repo", id="123")],
+                        title="Subissue 2 from tracker",
+                    ),
+                ],
+                recent_ids=[("repo", "345")],
+                filter_recent_by_since=True,
+            )
+            await self._run_sync(
+                tracker,
+                full_sync=False,
+                incremental_lookback_seconds=lookback,
+                tasks_tracker_to_notion=True,
+                tasks_notion_to_tracker=False,
+                milestones_tracker_to_notion=False,
+                milestones_notion_to_tracker=False,
+            )
+            return tracker
+
+        tracker = await run_sync(30 * 60)
+        self.assertEqual(len(tracker.updated_tasks), 0)
+        self.assertEqual(self.respx.routes["pages_update"].calls.call_count, 0)
+
+        self.reset_handlers()
+
+        tracker = await run_sync(2 * 60 * 60)
+        task_updates = [
+            call
+            for call in self.respx.routes["pages_update"].calls
+            if call.request.url.path == "/v1/pages/a4e70f0b-b5b1-43ca-ac0e-7723ae7dc359"
+        ]
+        self.assertEqual(len(tracker.updated_tasks), 0)
+        self.assertEqual(len(task_updates), 1)
+        title = json.loads(task_updates[0].request.content)["properties"]["Title"]["title"][0]["text"]["content"]
+        self.assertEqual(title, "[prefix] Subissue 2 from tracker")
 
     async def test_full_sync_processes_linked_refs(self):
         tracker = TwoWayTestTracker(
