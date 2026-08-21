@@ -286,9 +286,12 @@ class GitHub(IssueTracker, GitHubFixups):
             self._update_issue_basic(old_issue, new_issue),
             self._update_issue_assignees(old_issue, new_issue),
             self._update_issue_labels(old_issue, new_issue),
+            self._update_issue_fields(old_issue, new_issue),
         )
 
-    async def create_task_issue_from_notion(self, parent_issue, title, description="", assignees=None, labels=None):
+    async def create_task_issue_from_notion(
+        self, parent_issue, title, description="", assignees=None, labels=None, estimate=None
+    ):
         """Create a GitHub issue as a task from Notion data."""
         if not getattr(parent_issue, "gql", None):
             raise NotImplementedError("GitHub task create requires a resolved parent issue")
@@ -313,7 +316,14 @@ class GitHub(IssueTracker, GitHubFixups):
 
         data = await self.endpoint(op)
         issue = (op + data).create_issue.issue
-        return await self._parse_issue(issue, sub_issues=False)
+        created_issue = await self._parse_issue(issue, sub_issues=False)
+
+        if estimate not in (None, ""):
+            estimated_issue = replace(created_issue, estimate=estimate)
+            await self._update_issue_fields(created_issue, estimated_issue)
+            return estimated_issue
+
+        return created_issue
 
     def _state_bucket(self, state):
         return "closed" if state in self.property_names["notion_closed_states"] else "open"
@@ -326,6 +336,7 @@ class GitHub(IssueTracker, GitHubFixups):
                 new_issue.description != old_issue.description,
                 new_issue.assignees != old_issue.assignees,
                 new_issue.labels != old_issue.labels,
+                new_issue.estimate != old_issue.estimate,
                 self._state_bucket(new_issue.state) != self._state_bucket(old_issue.state),
             ]
         )
@@ -340,6 +351,7 @@ class GitHub(IssueTracker, GitHubFixups):
                 new_issue.assignees != old_issue.assignees,
                 new_issue.labels != old_issue.labels,
                 new_issue.priority != old_issue.priority,
+                new_issue.estimate != old_issue.estimate,
                 new_issue.start_date != old_issue.start_date,
                 new_issue.end_date != old_issue.end_date,
                 new_issue.issue_type != old_issue.issue_type,
@@ -451,15 +463,15 @@ class GitHub(IssueTracker, GitHubFixups):
         issue_fields = []
 
         if self.property_names.get("notion_milestones_priority"):
-            priority_field = await self.issue_planning_cache.get_issue_field(org, GITHUB_ISSUE_FIELD_PRIORITY)
-            if not priority_field or priority_field.data_type != "SINGLE_SELECT":
-                data_type = "(missing)" if not priority_field else priority_field.data_type
-                raise Exception(
-                    f"GitHub issue field '{GITHUB_ISSUE_FIELD_PRIORITY}' in {new_issue.repo} "
-                    f"must be SINGLE_SELECT, got '{data_type}'"
-                )
-
             if field_value_changed(old_issue.priority, new_issue.priority):
+                priority_field = await self.issue_planning_cache.get_issue_field(org, GITHUB_ISSUE_FIELD_PRIORITY)
+                if not priority_field or priority_field.data_type != "SINGLE_SELECT":
+                    data_type = "(missing)" if not priority_field else priority_field.data_type
+                    raise Exception(
+                        f"GitHub issue field '{GITHUB_ISSUE_FIELD_PRIORITY}' in {new_issue.repo} "
+                        f"must be SINGLE_SELECT, got '{data_type}'"
+                    )
+
                 option_id = await self.issue_planning_cache.get_issue_field_option_id(
                     org, GITHUB_ISSUE_FIELD_PRIORITY, str(new_issue.priority)
                 )
@@ -472,15 +484,40 @@ class GitHub(IssueTracker, GitHubFixups):
                 field_update = {"single_select_option_id": option_id} if new_issue.priority else {"delete": True}
                 issue_fields.append({"field_id": priority_field.id, **field_update})
 
-        notion_link_field = await self.issue_planning_cache.get_issue_field(org, GITHUB_ISSUE_FIELD_NOTION_LINK)
-        if not notion_link_field or notion_link_field.data_type != "TEXT":
-            data_type = "(missing)" if not notion_link_field else notion_link_field.data_type
-            raise Exception(
-                f"GitHub issue field '{GITHUB_ISSUE_FIELD_NOTION_LINK}' in {new_issue.repo} "
-                f"must be TEXT, got '{data_type}'"
-            )
+        if field_value_changed(old_issue.estimate, new_issue.estimate):
+            estimate_field = await self.issue_planning_cache.get_issue_field(org, GITHUB_ISSUE_FIELD_ESTIMATE)
+            if not estimate_field or estimate_field.data_type not in ("SINGLE_SELECT", "NUMBER"):
+                data_type = "(missing)" if not estimate_field else estimate_field.data_type
+                raise Exception(
+                    f"GitHub issue field '{GITHUB_ISSUE_FIELD_ESTIMATE}' in {new_issue.repo} "
+                    f"must be SINGLE_SELECT or NUMBER, got '{data_type}'"
+                )
+
+            if estimate_field.data_type == "SINGLE_SELECT":
+                option_id = await self.issue_planning_cache.get_issue_field_option_id(
+                    org, GITHUB_ISSUE_FIELD_ESTIMATE, str(new_issue.estimate)
+                )
+
+                if new_issue.estimate and not option_id:
+                    raise Exception(
+                        f"Could not find option '{new_issue.estimate}' on GitHub issue field "
+                        f"'{GITHUB_ISSUE_FIELD_ESTIMATE}' in {new_issue.repo}"
+                    )
+                field_update = {"single_select_option_id": option_id} if new_issue.estimate else {"delete": True}
+            else:
+                field_update = build_scalar_field_update(estimate_field.data_type, new_issue.estimate)
+
+            issue_fields.append({"field_id": estimate_field.id, **field_update})
 
         if field_value_changed(old_issue.notion_url, new_issue.notion_url):
+            notion_link_field = await self.issue_planning_cache.get_issue_field(org, GITHUB_ISSUE_FIELD_NOTION_LINK)
+            if not notion_link_field or notion_link_field.data_type != "TEXT":
+                data_type = "(missing)" if not notion_link_field else notion_link_field.data_type
+                raise Exception(
+                    f"GitHub issue field '{GITHUB_ISSUE_FIELD_NOTION_LINK}' in {new_issue.repo} "
+                    f"must be TEXT, got '{data_type}'"
+                )
+
             field_update = {"text_value": str(new_issue.notion_url)} if new_issue.notion_url else {"delete": True}
             issue_fields.append({"field_id": notion_link_field.id, **field_update})
 

@@ -467,7 +467,9 @@ class Bugzilla(IssueTracker):
 
         return repos
 
-    async def create_task_issue_from_notion(self, parent_issue, title, description="", assignees=None, labels=None):
+    async def create_task_issue_from_notion(
+        self, parent_issue, title, description="", assignees=None, labels=None, estimate=None
+    ):
         """Create a bugzilla task from Notion data.
 
         Not supported in v2 due required product/component mapping.

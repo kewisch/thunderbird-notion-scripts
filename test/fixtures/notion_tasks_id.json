@@ -17,6 +17,7 @@
       },
       "Title": {"type": "title", "title": {"name": "Title"}},
       "Priority": {"name": "Priority", "type": "select", "select": {"options": [{"name": "P1"}, {"name": "P2"}, {"name": "P3"}]}},
+      "Estimate": {"name": "Estimate", "type": "select", "select": {"options": [{"name": "3"}, {"name": "5"}]}},
       "Owner": {"name": "Owner", "type": "people"},
       "Peer Reviewer": {"name": "Peer Reviewer", "type": "people"},
       "Review URL": {"name": "Review URL", "type": "files", "files": []},
