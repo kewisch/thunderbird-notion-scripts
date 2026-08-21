@@ -69,8 +69,10 @@ class TwoWayTestTracker(IssueTracker):
     async def update_task_issue(self, old_issue, new_issue):
         self.updated_tasks.append((old_issue, new_issue))
 
-    async def create_task_issue_from_notion(self, parent_issue, title, description="", assignees=None, labels=None):
-        self.created_tasks.append((parent_issue, title))
+    async def create_task_issue_from_notion(
+        self, parent_issue, title, description="", assignees=None, labels=None, estimate=None
+    ):
+        self.created_tasks.append((parent_issue, title, estimate))
         return Issue(
             repo=parent_issue.repo,
             id=f"c{len(self.created_tasks)}",
@@ -79,6 +81,7 @@ class TwoWayTestTracker(IssueTracker):
             description=description,
             state="Backlog",
             priority="P2",
+            estimate=estimate,
             assignees=set(),
             labels=set(),
             url=f"https://example.com/{parent_issue.repo}/c{len(self.created_tasks)}",
@@ -281,6 +284,7 @@ class TwoWaySyncTest(BaseTestCase):
                         "status": {"name": "Backlog"},
                     },
                     "Issue Link": {"type": "files", "files": []},
+                    "Estimate": {"type": "select", "select": {"name": "5"}},
                     "Project": {
                         "type": "relation",
                         "relation": [{"id": "726fac28-6b63-48ca-90ec-0066be1a2755"}],
@@ -296,6 +300,9 @@ class TwoWaySyncTest(BaseTestCase):
                 ),
             ],
             recent_ids=[("repo", "123")],
+            property_names={
+                "notion_tasks_estimate": "Estimate",
+            },
         )
 
         await self._run_sync(

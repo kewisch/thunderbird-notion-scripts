@@ -193,7 +193,9 @@ class IssueTracker:
         """
         await self.update_milestone_issue(old_issue, new_issue)
 
-    async def create_task_issue_from_notion(self, parent_issue, title, description="", assignees=None, labels=None):
+    async def create_task_issue_from_notion(
+        self, parent_issue, title, description="", assignees=None, labels=None, estimate=None
+    ):
         """Create a task issue on the tracker from Notion data."""
         raise NotImplementedError
 

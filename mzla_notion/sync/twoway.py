@@ -268,6 +268,9 @@ class TrackerTwoWaySync(BaseSync):
         title = self._get_richtext_prop(page, "notion_tasks_title", tracker_issue.title)
         status = (self._get_prop(page, "notion_tasks_status") or {}).get("name")
         priority = (self._get_prop(page, "notion_tasks_priority") or {}).get("name")
+        estimate = tracker_issue.estimate
+        if self.propnames.get("notion_tasks_estimate"):
+            estimate = (self._get_prop(page, "notion_tasks_estimate") or {}).get("name")
 
         assignees = {
             self.tracker.new_user(notion_user=assignee["id"])
@@ -279,6 +282,7 @@ class TrackerTwoWaySync(BaseSync):
             title=title or tracker_issue.title,
             state=status or tracker_issue.state,
             priority=priority or tracker_issue.priority,
+            estimate=estimate,
             assignees=assignees if assignees else tracker_issue.assignees,
             notion_url=page.get("url", tracker_issue.notion_url),
         )
@@ -593,6 +597,9 @@ class TrackerTwoWaySync(BaseSync):
             return
 
         title = self._get_richtext_prop(page, "notion_tasks_title", "Untitled Task")
+        estimate = None
+        if self.propnames.get("notion_tasks_estimate"):
+            estimate = (self._get_prop(page, "notion_tasks_estimate") or {}).get("name")
         assignees = {
             self.tracker.new_user(notion_user=user["id"]) for user in self._get_prop(page, "notion_tasks_assignee", [])
         }
@@ -606,6 +613,7 @@ class TrackerTwoWaySync(BaseSync):
                     description="",
                     assignees=assignees,
                     labels=None,
+                    estimate=estimate,
                 )
                 if created_issue:
                     self._task_create_cache[page_id] = created_issue
