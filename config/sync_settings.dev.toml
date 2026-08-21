@@ -16,7 +16,7 @@ milestones_body_sync = false
 milestones_body_sync_if_empty = true
 milestones_create_from_tracker = true
 tasks_body_sync = false
-incremental_lookback_days = 7
+incremental_lookback_seconds = 120
 
 # Two-way directions (defaults shown explicitly)
 tasks_tracker_to_notion = true
@@ -80,7 +80,7 @@ notion_closed_states = ["Done", "Canceled"]
 #notion_milestones_id = "20edea4adcdf8064878af1281be913c8"
 #bugzilla_base = "https://bugzilla.mozilla.org"
 #milestones_tracker_prefix = "[meta] "
-#incremental_lookback_days = 7
+#incremental_lookback_seconds = 604800
 #
 ## Two-way directions (defaults shown explicitly)
 #tasks_tracker_to_notion = true

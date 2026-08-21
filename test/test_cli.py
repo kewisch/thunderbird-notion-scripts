@@ -1,7 +1,10 @@
+import tempfile
 import unittest
 
-from unittest.mock import patch
+from pathlib import Path
+from unittest.mock import AsyncMock, patch
 
+from mzla_notion.cli import cmd_synchronize
 from mzla_notion.people import load_notion_usermap
 from scripts.notion_debug import build_usermap_table_rows
 
@@ -134,6 +137,67 @@ class TestCliHelpers(unittest.TestCase):
                 ],
             ],
         )
+
+
+class TestSynchronizeCli(unittest.IsolatedAsyncioTestCase):
+    async def _run_twoway_cli(self, config_body, **kwargs):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config = Path(tmpdir) / "sync.toml"
+            config.write_text(config_body, encoding="utf-8")
+
+            tracker = object()
+            load_users = AsyncMock(return_value={"github": {}})
+            create_github = AsyncMock(return_value=tracker)
+            synchronize = AsyncMock()
+
+            with patch.dict(
+                "os.environ",
+                {"GITHUB_TOKEN": "GITHUB_TOKEN", "NOTION_TOKEN": "NOTION_TOKEN"},
+            ):
+                with (
+                    patch("mzla_notion.cli.load_notion_usermap", load_users),
+                    patch("mzla_notion.cli.GitHub.create", create_github),
+                    patch("mzla_notion.cli.synchronize_twoway", synchronize),
+                ):
+                    result = await cmd_synchronize(["services"], str(config), **kwargs)
+
+        return result, tracker, create_github, synchronize
+
+    async def test_project_dry_forces_tracker_and_twoway_sync_dry(self):
+        result, tracker, create_github, synchronize = await self._run_twoway_cli(
+            """
+[sync.services]
+method = "tracker_twoway"
+tracker = "github"
+dry = true
+repositories = ["example/repo"]
+notion_milestones_id = "milestones-id"
+notion_tasks_id = "tasks-id"
+""",
+            dry_run=False,
+        )
+
+        self.assertEqual(result, 0)
+        self.assertIs(create_github.await_args.kwargs["dry"], True)
+        self.assertIs(synchronize.await_args.kwargs["dry"], True)
+        self.assertIs(synchronize.await_args.kwargs["tracker"], tracker)
+
+    async def test_lookback_cli_overrides_twoway_config(self):
+        result, _, _, synchronize = await self._run_twoway_cli(
+            """
+[sync.services]
+method = "tracker_twoway"
+tracker = "github"
+repositories = ["example/repo"]
+notion_milestones_id = "milestones-id"
+notion_tasks_id = "tasks-id"
+incremental_lookback_seconds = 60
+""",
+            lookback=3600,
+        )
+
+        self.assertEqual(result, 0)
+        self.assertEqual(synchronize.await_args.kwargs["incremental_lookback_seconds"], 3600)
 
 
 if __name__ == "__main__":

@@ -22,7 +22,7 @@ class TrackerTwoWaySync(BaseSync):
 
     def __init__(
         self,
-        incremental_lookback_days=7,
+        incremental_lookback_seconds=7 * 24 * 60 * 60,
         tasks_tracker_to_notion=True,
         tasks_notion_to_tracker=False,
         milestones_tracker_to_notion=False,
@@ -31,12 +31,14 @@ class TrackerTwoWaySync(BaseSync):
         tasks_notion_to_tracker_create=False,
         milestones_tracker_to_notion_create=False,
         milestones_notion_to_tracker_create=False,
+        tasks_conflict_preference="tracker",
+        milestones_conflict_preference="notion",
         full_sync=False,
         **kwargs,
     ):
         """Initialize two-way sync configuration and directional behavior."""
         super().__init__(**kwargs)
-        self.incremental_lookback_days = incremental_lookback_days
+        self.incremental_lookback_seconds = incremental_lookback_seconds
         self.tasks_tracker_to_notion = tasks_tracker_to_notion
         self.tasks_notion_to_tracker = tasks_notion_to_tracker
         self.milestones_tracker_to_notion = milestones_tracker_to_notion
@@ -739,7 +741,7 @@ class TrackerTwoWaySync(BaseSync):
     async def synchronize(self):
         """Run a complete incremental two-way synchronization cycle."""
         timestamp = datetime.datetime.now(datetime.UTC)
-        since = timestamp - datetime.timedelta(days=self.incremental_lookback_days)
+        since = timestamp - datetime.timedelta(seconds=self.incremental_lookback_seconds)
         self._task_discovery_since = since
 
         await self._async_init()

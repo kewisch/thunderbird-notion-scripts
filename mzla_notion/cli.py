@@ -103,7 +103,13 @@ def setup_logging(verbose):
 
 
 async def cmd_synchronize(
-    projects, config, verbose=0, dry_run=False, synchronous=False, full_sync=False
+    projects,
+    config,
+    verbose=0,
+    dry_run=None,
+    synchronous=False,
+    full_sync=False,
+    lookback=None,
 ):
     """This is the main cli. Please use --help on how to use it."""
     with open(config, "rb") as fp:
@@ -234,7 +240,9 @@ async def cmd_synchronize(
                 team_association=project.get("notion_associated_team"),
                 dry=dry_run,
                 synchronous=synchronous,
-                incremental_lookback_days=project.get("incremental_lookback_days", 7),
+                incremental_lookback_seconds=(
+                    lookback if lookback is not None else project.get("incremental_lookback_seconds", 7 * 24 * 60 * 60)
+                ),
                 tasks_tracker_to_notion=project.get("tasks_tracker_to_notion", True),
                 tasks_notion_to_tracker=project.get("tasks_notion_to_tracker", False),
                 milestones_tracker_to_notion=project.get("milestones_tracker_to_notion", False),
@@ -329,6 +337,13 @@ async def async_main():
         help="Disable incremental mode and synchronize all linked records for supported engines",
     )
     parser.add_argument(
+        "--lookback",
+        dest="lookback",
+        type=int,
+        default=None,
+        help="Override incremental lookback window for supported engines. Specify in seconds.",
+    )
+    parser.add_argument(
         "-n",
         "--dry-run",
         action=argparse.BooleanOptionalAction,
@@ -360,5 +375,6 @@ async def async_main():
                 dry_run=args.dry_run,
                 synchronous=args.synchronous,
                 full_sync=args.full_sync,
+                lookback=args.lookback,
             )
         )
