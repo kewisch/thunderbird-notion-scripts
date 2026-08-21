@@ -827,10 +827,13 @@ class GitHub(IssueTracker, GitHubFixups):
                 "after": cursor,
                 "order_by": {"field": "UPDATED_AT", "direction": "DESC"},
             }
+            issue_filter = {}
             if issue_type:
-                issue_args["filter_by"] = {"type": issue_type}
+                issue_filter["type"] = issue_type
             if since is not None:
-                issue_args["filter_by"] = {"since": since}
+                issue_filter["since"] = since
+            if issue_filter:
+                issue_args["filter_by"] = issue_filter
 
             issues = op.repository(owner=orgname, name=reponame).issues(**issue_args)
             issues.page_info.__fields__(has_next_page=True)
