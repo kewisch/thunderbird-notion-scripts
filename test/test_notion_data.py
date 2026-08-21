@@ -66,7 +66,7 @@ class NotionDateDiffTest(unittest.TestCase):
         self.assertEqual(updated["Dates"]["date"]["start"], "2026-04-27")
         self.assertEqual(updated["Dates"]["date"]["end"], "2026-04-28")
 
-    def test_dates_update_preserves_datetime(self):
+    def test_dates_update_rounds_datetime_to_minute(self):
         prop = dates("Dates")
         updated = prop.update_content(
             {
@@ -74,13 +74,18 @@ class NotionDateDiffTest(unittest.TestCase):
                 "end": datetime.datetime(2026, 4, 28, 8, 1, 2, tzinfo=datetime.timezone.utc),
             }
         )
-        self.assertEqual(updated["Dates"]["date"]["start"], "2026-04-27T13:45:06+00:00")
-        self.assertEqual(updated["Dates"]["date"]["end"], "2026-04-28T08:01:02+00:00")
+        self.assertEqual(updated["Dates"]["date"]["start"], "2026-04-27T13:45+00:00")
+        self.assertEqual(updated["Dates"]["date"]["end"], "2026-04-28T08:01+00:00")
 
     def test_date_update_preserves_date_without_time(self):
         prop = date("Date")
         updated = prop.update_content(datetime.date(2026, 4, 27))
         self.assertEqual(updated["Date"]["date"]["start"], "2026-04-27")
+
+    def test_date_update_rounds_datetime_to_minute(self):
+        prop = date("Date")
+        updated = prop.update_content(datetime.datetime(2026, 4, 27, 13, 45, 6, tzinfo=datetime.timezone.utc))
+        self.assertEqual(updated["Date"]["date"]["start"], "2026-04-27T13:45+00:00")
 
 
 class NotionRequestStatusTest(unittest.IsolatedAsyncioTestCase):
