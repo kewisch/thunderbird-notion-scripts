@@ -8,7 +8,7 @@ import asyncio
 import aiostream
 
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from sgqlc.endpoint.httpx import HTTPXEndpoint
 from sgqlc.operation import Operation, GraphQLErrors
 
