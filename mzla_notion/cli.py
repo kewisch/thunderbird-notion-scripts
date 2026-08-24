@@ -3,6 +3,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 import argparse
+import datetime
 import logging
 import os
 import sys
@@ -19,6 +20,29 @@ from .people import load_notion_usermap
 from .util import GitHubActionsFormatter
 
 logger = logging.getLogger("notion_sync")
+
+
+def parse_lookback(value, now=None):
+    """Parse lookback seconds or an ISO timestamp."""
+    try:
+        return int(value)
+    except ValueError:
+        pass
+
+    normalized = value.removesuffix("Z") + "+00:00" if value.endswith("Z") else value
+    try:
+        timestamp = datetime.datetime.fromisoformat(normalized)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("lookback must be seconds or an ISO date/time") from exc
+
+    if now is None:
+        now = datetime.datetime.now(timestamp.tzinfo)
+
+    lookback_seconds = int((now - timestamp).total_seconds())
+    if lookback_seconds < 0:
+        raise argparse.ArgumentTypeError("lookback date/time must not be in the future")
+
+    return lookback_seconds
 
 
 def cmd_list_synchronizers(config):
@@ -347,9 +371,9 @@ async def async_main():
     parser.add_argument(
         "--lookback",
         dest="lookback",
-        type=int,
+        type=parse_lookback,
         default=None,
-        help="Override incremental lookback window for supported engines. Specify in seconds.",
+        help="Override incremental lookback window for supported engines. Specify seconds or an ISO date/time.",
     )
     parser.add_argument(
         "-n",

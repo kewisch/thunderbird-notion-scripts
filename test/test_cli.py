@@ -1,10 +1,12 @@
+import argparse
+import datetime
 import tempfile
 import unittest
 
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
-from mzla_notion.cli import cmd_synchronize
+from mzla_notion.cli import cmd_synchronize, parse_lookback
 from mzla_notion.people import load_notion_usermap
 from scripts.notion_debug import build_usermap_table_rows
 
@@ -96,6 +98,21 @@ class TestPeopleLoader(unittest.IsolatedAsyncioTestCase):
 
 
 class TestCliHelpers(unittest.TestCase):
+    def test_parse_lookback_accepts_seconds(self):
+        self.assertEqual(parse_lookback("3600"), 3600)
+
+    def test_parse_lookback_calculates_seconds_from_iso_datetime(self):
+        now = datetime.datetime(2026, 8, 24, 12, 0, tzinfo=datetime.UTC)
+
+        self.assertEqual(parse_lookback("2026-08-24T10:30:00Z", now=now), 5400)
+        self.assertEqual(parse_lookback("2026-08-24T10:30:00+00:00", now=now), 5400)
+
+    def test_parse_lookback_rejects_future_iso_datetime(self):
+        now = datetime.datetime(2026, 8, 24, 12, 0, tzinfo=datetime.UTC)
+
+        with self.assertRaises(argparse.ArgumentTypeError):
+            parse_lookback("2026-08-24T12:00:01Z", now=now)
+
     def test_build_usermap_table_rows(self):
         user_map = {
             "github": {
