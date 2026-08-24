@@ -141,6 +141,7 @@ def issue_field_ops(issue):
 
     project_items = issue.project_items(first=10, include_archived=True).nodes
     project_items.id()
+    project_items.updated_at()
 
     project = project_items.project.__as__(schema.ProjectV2)
     project.id()

@@ -73,7 +73,8 @@
                 },
                 "text": "https://notion.so/example/test-ref-failure-a2b009b4b63447599b138cf059a7f885"
               },
-              "sprint": null
+              "sprint": null,
+              "updatedAt": "1970-01-01T00:00:00Z"
             }
           ]
         },

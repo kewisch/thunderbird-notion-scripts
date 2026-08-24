@@ -4,6 +4,7 @@ __typename
 ... on ProjectV2 {
 items(first: 100, after: null) {
 nodes {
+updatedAt
 content {
 __typename
 ... on Issue {
@@ -120,6 +121,7 @@ login
 projectItems(first: 10, includeArchived: true) {
 nodes {
 id
+updatedAt
 project {
 __typename
 ... on ProjectV2 {
