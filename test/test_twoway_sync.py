@@ -301,6 +301,92 @@ class TwoWaySyncTest(BaseTestCase):
         )
         await sync.notion.aclose()
 
+    async def test_task_estimate_maps_in_both_directions(self):
+        tracker_issue = self._issue(
+            "234",
+            updated=datetime.datetime(2025, 1, 1, tzinfo=datetime.timezone.utc),
+            parents=[IssueRef(repo="repo", id="123")],
+        )
+        tracker_issue.estimate = "3"
+        tracker = TwoWayTestTracker(
+            issues=[tracker_issue],
+            property_names={
+                "notion_tasks_estimate": "Estimate",
+            },
+        )
+        sync = TrackerTwoWaySync(
+            project_key="twoway",
+            tracker=tracker,
+            notion_token="NOTION_TOKEN",
+            milestones_id="milestones_id",
+            tasks_id="tasks_id",
+            dry=True,
+        )
+
+        notion_page = {
+            "id": "task-234",
+            "url": "https://notion.so/example/task-234",
+            "properties": {
+                "Title": {"type": "title", "title": [{"plain_text": "Issue 234"}]},
+                "Estimate": {"type": "select", "select": {"name": "5"}},
+            },
+        }
+
+        from_notion = sync._get_task_tracker_issue_from_notion(tracker_issue, notion_page)
+        self.assertEqual(from_notion.estimate, "5")
+
+        notion_page["properties"]["Estimate"]["select"] = None
+        from_notion = sync._get_task_tracker_issue_from_notion(tracker_issue, notion_page)
+        self.assertIsNone(from_notion.estimate)
+
+        to_notion = await sync._get_task_notion_data(
+            tracker_issue=tracker_issue,
+            parent_milestone_pages=[],
+            old_page=None,
+        )
+        self.assertEqual(to_notion["Estimate"], "3")
+        await sync.notion.aclose()
+
+    async def test_linked_task_repository_updates_with_normal_tracker_to_notion_sync(self):
+        tracker = TwoWayTestTracker(
+            issues=[
+                self._issue(
+                    "123",
+                    updated=datetime.datetime(2022, 7, 6, 20, 25, tzinfo=datetime.timezone.utc),
+                    title="Milestone",
+                ),
+                self._issue(
+                    "345",
+                    updated=datetime.datetime(2022, 7, 6, 20, 26, tzinfo=datetime.timezone.utc),
+                    parents=[IssueRef(repo="repo", id="123")],
+                    title="Subissue 2",
+                ),
+            ],
+            recent_ids=[("repo", "345")],
+            property_names={
+                "notion_tasks_repository_map": {"repo": "test"},
+            },
+        )
+
+        await self._run_sync(
+            tracker,
+            tasks_tracker_to_notion=True,
+            tasks_notion_to_tracker=True,
+            tasks_conflict_preference="notion",
+            full_sync=False,
+        )
+
+        task_updates = [
+            call
+            for call in self.respx.routes["pages_update"].calls
+            if call.request.url.path == "/v1/pages/a4e70f0b-b5b1-43ca-ac0e-7723ae7dc359"
+        ]
+        self.assertEqual(len(task_updates), 1)
+        self.assertEqual(
+            json.loads(task_updates[0].request.content)["properties"]["Repository"],
+            {"select": {"name": "test"}},
+        )
+
     async def test_tracker_to_notion_task_create_requires_parent(self):
         tracker = TwoWayTestTracker(
             issues=[
@@ -485,6 +571,7 @@ class TwoWaySyncTest(BaseTestCase):
         )
 
         self.assertEqual(len(tracker.created_tasks), 1)
+        self.assertEqual(tracker.created_tasks[0][2], "5")
         self.assertGreaterEqual(self.respx.routes["pages_update"].calls.call_count, 1)
         tasks_query_calls = [
             call
