@@ -115,7 +115,9 @@ class TwoWaySyncTest(BaseTestCase):
         )
         await sync.synchronize()
 
-    def _issue(self, issue_id, *, updated, parents=None, title=None, state="Backlog"):
+    def _issue(
+        self, issue_id, *, updated, parents=None, title=None, state="Backlog", issue_type=None, deeply_nested=False
+    ):
         return Issue(
             repo="repo",
             id=issue_id,
@@ -129,8 +131,14 @@ class TwoWaySyncTest(BaseTestCase):
             url=f"https://example.com/repo/{issue_id}",
             created_date=datetime.datetime(2025, 1, 1, tzinfo=datetime.timezone.utc),
             updated_date=updated,
+            issue_type=issue_type,
             sub_issues=[],
+            deeply_nested=deeply_nested,
         )
+
+    def _assert_stats_row(self, logs, label, task_count, milestone_count):
+        output = "\n".join(logs.output)
+        self.assertRegex(output, rf"Two-way sync stats\s+{label}\s+{task_count}\s+{milestone_count}")
 
     async def test_incremental_skips_when_not_recent(self):
         tracker = TwoWayTestTracker(
@@ -319,6 +327,58 @@ class TwoWaySyncTest(BaseTestCase):
         )
 
         self.assertEqual(self.respx.routes["pages_create"].calls.call_count, 1)
+
+    async def test_deeply_nested_task_create_candidate_is_not_counted_as_created(self):
+        tracker = TwoWayTestTracker(
+            issues=[
+                self._issue(
+                    "502",
+                    updated=datetime.datetime(2025, 1, 1, tzinfo=datetime.timezone.utc),
+                    parents=[IssueRef(repo="repo", id="123")],
+                    title="Nested Child",
+                    deeply_nested=True,
+                ),
+            ],
+            recent_ids=[("repo", "502")],
+        )
+
+        with self.assertLogs("project_sync", level="INFO") as logs:
+            await self._run_sync(
+                tracker,
+                tasks_tracker_to_notion=True,
+                tasks_tracker_to_notion_create=True,
+                tasks_notion_to_tracker=False,
+                full_sync=False,
+            )
+
+        self.assertEqual(self.respx.routes["pages_create"].calls.call_count, 0)
+        self._assert_stats_row(logs, "created from tracker", 0, 0)
+
+    async def test_milestone_issue_with_parent_is_not_task_create_candidate(self):
+        tracker = TwoWayTestTracker(
+            issues=[
+                self._issue(
+                    "1253",
+                    updated=datetime.datetime(2025, 1, 1, tzinfo=datetime.timezone.utc),
+                    parents=[IssueRef(repo="repo", id="1000")],
+                    issue_type="Milestone",
+                    title="Milestone with epic parent",
+                ),
+            ],
+            recent_ids=[("repo", "1253")],
+        )
+
+        await self._run_sync(
+            tracker,
+            tasks_tracker_to_notion=True,
+            tasks_tracker_to_notion_create=True,
+            milestones_issue_type="Milestone",
+            milestones_tracker_to_notion=True,
+            milestones_tracker_to_notion_create=False,
+            full_sync=False,
+        )
+
+        self.assertEqual(self.respx.routes["pages_create"].calls.call_count, 0)
 
     async def test_tracker_to_notion_milestone_create(self):
         tracker = TwoWayTestTracker(

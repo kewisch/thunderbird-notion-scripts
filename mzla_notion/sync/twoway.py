@@ -127,14 +127,11 @@ class TrackerTwoWaySync(BaseSync):
         return bool(status_name and status_name in self.propnames["notion_closed_states"])
 
     def _is_task_issue(self, tracker_issue):
-        # Tasks are children in v2 semantics.
-        if tracker_issue.parents:
-            return True
-
-        if self.milestones_issue_type and tracker_issue.issue_type == self.milestones_issue_type:
-            return False
-
-        return False
+        return self.tracker.is_task_issue(
+            tracker_issue,
+            milestones_issue_type=self.milestones_issue_type,
+            epics_issue_type=self.epics_issue_type,
+        )
 
     def _is_milestone_issue(self, tracker_issue):
         milestone_issue_type = self.milestones_issue_type or getattr(self.tracker, "milestones_issue_type", None)
@@ -707,14 +704,9 @@ class TrackerTwoWaySync(BaseSync):
             for key, issue in task_issues.items():
                 if not self._is_task_issue(issue):
                     logger.debug(
-                        "Skipping task sync %s#%s because it is not a task: %s",
+                        "Skipping task sync %s#%s because it is not a relevant task",
                         issue.repo,
                         issue.id,
-                        self.tracker.task_issue_debug_info(
-                            issue,
-                            milestones_issue_type=self.milestones_issue_type,
-                            epics_issue_type=self.epics_issue_type,
-                        ),
                     )
                     continue
 

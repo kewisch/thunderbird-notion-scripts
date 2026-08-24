@@ -167,6 +167,17 @@ class IssueTracker:
         """Determine the title for notion tasks."""
         return tasks_notion_prefix + issue.title
 
+    def is_task_issue(self, issue, *, milestones_issue_type=None, epics_issue_type=None):
+        """Return whether an issue should be synchronized as a task."""
+        if milestones_issue_type and issue.issue_type == milestones_issue_type:
+            return False
+        if epics_issue_type and issue.issue_type == epics_issue_type:
+            return False
+
+        # Generic trackers do not expose parent issue type in the common model. Preserve the
+        # historical fallback for trackers that only model task-ness as "has a parent".
+        return bool(issue.parents)
+
     async def collect_tracker_milestones(self, milestones_issue_type, sub_issues=False):
         """Collect all milestone issues on the tracker."""
         if False:
