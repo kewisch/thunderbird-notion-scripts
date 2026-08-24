@@ -257,6 +257,8 @@ async def cmd_synchronize(
                 tasks_notion_to_tracker_create=project.get("tasks_notion_to_tracker_create", False),
                 milestones_tracker_to_notion_create=project.get("milestones_tracker_to_notion_create", False),
                 milestones_notion_to_tracker_create=project.get("milestones_notion_to_tracker_create", False),
+                tasks_conflict_preference=project.get("tasks_conflict_preference", "tracker"),
+                milestones_conflict_preference=project.get("milestones_conflict_preference", "notion"),
                 full_sync=full_sync,
             )
         elif project["method"] == "github_labels":
