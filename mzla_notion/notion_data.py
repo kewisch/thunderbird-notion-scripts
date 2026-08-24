@@ -209,7 +209,9 @@ class NotionDatabase:
         if not self.dry:
             await self.notion.pages.update(page_id, archived=True)
 
-    async def update_page(self, page: Dict[str, Any], datadict: Dict[str, Any], **kwargs) -> bool:
+    async def update_page(
+        self, page: Dict[str, Any], datadict: Dict[str, Any], diff_log: bool = True, **kwargs
+    ) -> bool:
         """Update `page` with the data in `datadict`. Updates only occur if `page` and `datadict` are different."""
         icon_differs = (
             "icon" in kwargs
@@ -221,7 +223,7 @@ class NotionDatabase:
         if icon_differs:
             update_kwargs["icon"] = kwargs["icon"]
 
-        if self.page_diff(datadict, page):
+        if self.page_diff(datadict, page, log=diff_log):
             data = self.dict_to_page(datadict)
             update_kwargs["properties"] = data
 

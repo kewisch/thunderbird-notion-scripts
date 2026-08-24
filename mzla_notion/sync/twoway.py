@@ -201,13 +201,18 @@ class TrackerTwoWaySync(BaseSync):
     async def synchronize_single_milestone_from_tracker(self, tracker_issue, page, candidate_debug=None):
         """Apply tracker milestone fields onto the linked Notion milestone page."""
         notion_data = self._get_milestone_notion_data_from_tracker(tracker_issue)
-        changed = await self.milestones_db.update_page(page, notion_data)
+        changed = self.milestones_db.page_diff(notion_data, page, log=False)
         if changed:
-            logger.info(f"Updating milestone {tracker_issue.repo}#{tracker_issue.id} from tracker")
+            logger.info(
+                f"Updating milestone {tracker_issue.repo}#{tracker_issue.id} - {tracker_issue.title} from tracker"
+            )
             if candidate_debug:
                 logger.debug(f"  candidate: {candidate_debug}")
+            logger.debug("  notion changes:")
+            self.milestones_db.page_diff(notion_data, page, log=logger.isEnabledFor(logging.DEBUG))
+            await self.milestones_db.update_page(page, notion_data, diff_log=False)
         else:
-            logger.info(f"Unchanged milestone {tracker_issue.repo}#{tracker_issue.id}")
+            logger.info(f"Unchanged milestone {tracker_issue.repo}#{tracker_issue.id} - {tracker_issue.title}")
         return changed
 
     async def synchronize_single_milestone(self, tracker_issue, page, skip_unchanged_msg=False, candidate_debug=None):

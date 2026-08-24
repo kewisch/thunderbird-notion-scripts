@@ -522,7 +522,7 @@ class BaseSync:
             else:
                 logger.info(f"Unchanged task {tracker_issue.repo}#{tracker_issue.id} - {tracker_issue.title}")
         else:
-            logger.info(f"Adding new task {tracker_issue.id} - {tracker_issue.title}")
+            logger.info(f"Adding new task {tracker_issue.repo}#{tracker_issue.id} - {tracker_issue.title}")
             logger.debug("\t" + str(notion_data))
             page = await self.tasks_db.create_page(notion_data)
             changed = page is not None
