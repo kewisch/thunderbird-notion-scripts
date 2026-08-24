@@ -42,6 +42,52 @@ class GitHubProjectTest(BaseTestCase):
         self.assertTrue(github.is_repo_allowed("kewisch/test"))
         self.assertEqual(github.get_all_repositories(), ["kewisch/test"])
 
+    def test_is_task_issue_uses_github_task_criteria(self):
+        def classifier_issue(issue_type=None, parent_type=None, on_tasks_project=False, review_url=None):
+            project_items = []
+            if on_tasks_project:
+                project_items.append(types.SimpleNamespace(project=types.SimpleNamespace(id="PVT_kwHOAAlD3s4AxVFW")))
+
+            parent = None
+            parents = []
+            if parent_type:
+                parent = types.SimpleNamespace(issue_type=types.SimpleNamespace(name=parent_type))
+                parents = [IssueRef(repo="kewisch/test", id="2")]
+
+            return GitHubIssue(
+                repo="kewisch/test",
+                id="10",
+                parents=parents,
+                title="Classifier issue",
+                description="",
+                state="Backlog",
+                priority="P2",
+                issue_type=issue_type,
+                labels=set(),
+                url="https://github.com/kewisch/test/issues/10",
+                review_url=review_url,
+                gql=types.SimpleNamespace(
+                    parent=parent,
+                    project_items=types.SimpleNamespace(nodes=project_items),
+                ),
+            )
+
+        self.github.milestones_issue_type = "Milestone"
+        self.github.epics_issue_type = "Epic"
+
+        cases = [
+            ("milestone_with_epic_parent", classifier_issue("Milestone", parent_type="Epic"), False),
+            ("epic_on_tasks_project", classifier_issue("Epic", on_tasks_project=True), False),
+            ("milestone_parent", classifier_issue(parent_type="Milestone"), True),
+            ("tasks_project", classifier_issue(on_tasks_project=True), True),
+            ("pull_request", classifier_issue(review_url="https://github.com/kewisch/test/pull/10"), True),
+            ("standalone", classifier_issue(), False),
+        ]
+
+        for name, issue, expected in cases:
+            with self.subTest(name):
+                self.assertEqual(self.github.is_task_issue(issue), expected)
+
     async def test_github_get_issues_basics(self):
         issues = [issue async for issue in self.github.get_issues_by_number([], True)]
         self.assertEqual(issues, [])
@@ -62,6 +108,7 @@ class GitHubProjectTest(BaseTestCase):
         issue = issues["1"]
 
         self.assertEqual(issue.review_url, "https://github.com/kewisch/test/pull/10")
+        self.assertTrue(self.github.is_task_issue(issue))
         self.assertEqual({user.tracker_user for user in issue.reviewers}, {"kewisch"})
         self.assertEqual({user.notion_user for user in issue.reviewers}, {"3df71ec3-17c7-4eb4-80bc-a321af157be6"})
 

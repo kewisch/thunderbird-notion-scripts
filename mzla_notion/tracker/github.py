@@ -215,6 +215,29 @@ class GitHub(IssueTracker, GitHubFixups):
         """Get a list of all associated repositories."""
         return list(self.allowed_repositories)
 
+    def is_task_issue(self, issue, *, milestones_issue_type=None, epics_issue_type=None):
+        """Return whether a GitHub issue should be synchronized as a task."""
+        milestone_type = milestones_issue_type or self.milestones_issue_type
+        epic_type = epics_issue_type or self.epics_issue_type
+        tasks_project = self.github_tasks_projects.get(issue.repo)
+
+        if milestone_type and issue.issue_type == milestone_type:
+            return False
+        if epic_type and issue.issue_type == epic_type:
+            return False
+
+        return any(
+            [
+                milestone_type and getnestedattr(lambda: issue.gql.parent.issue_type.name, None) == milestone_type,
+                bool(
+                    tasks_project
+                    and getattr(issue, "gql", None)
+                    and tasks_project.find_project_item(issue.gql, tasks_project.database_id)
+                ),
+                bool(issue.review_url),
+            ]
+        )
+
     async def _collect_tracker_issues_for_type(self, issue_type, sub_issues=False):
         """Collect all issues of an issue type on the tracker."""
         if not issue_type:
