@@ -234,6 +234,65 @@ class TwoWaySyncTest(BaseTestCase):
         self.assertEqual(len(tracker.updated_tasks), 0)
         self.assertGreaterEqual(len(tracker.updated_milestones), 1)
 
+    async def test_exact_task_tie_uses_configured_conflict_preference(self):
+        tracker_issue = self._issue(
+            "345",
+            updated=datetime.datetime(2022, 7, 6, 20, 25, tzinfo=datetime.timezone.utc),
+            parents=[IssueRef(repo="repo", id="123")],
+        )
+        tracker = TwoWayTestTracker(issues=[tracker_issue])
+        sync = TrackerTwoWaySync(
+            project_key="twoway",
+            tracker=tracker,
+            notion_token="NOTION_TOKEN",
+            milestones_id="milestones_id",
+            tasks_id="tasks_id",
+            tasks_conflict_preference="notion",
+            dry=True,
+        )
+
+        notion_page = {
+            "last_edited_time": "2022-07-06T20:25:00.000Z",
+        }
+
+        self.assertEqual(
+            sync._pick_direction("task", tracker_issue, notion_page, True, True),
+            "notion_to_tracker",
+        )
+
+        tracker_issue.updated_date = datetime.datetime(2022, 7, 6, 20, 26, tzinfo=datetime.timezone.utc)
+        self.assertEqual(
+            sync._pick_direction("task", tracker_issue, notion_page, True, True),
+            "tracker_to_notion",
+        )
+        await sync.notion.aclose()
+
+    async def test_exact_milestone_tie_uses_configured_conflict_preference(self):
+        tracker_issue = self._issue(
+            "123",
+            updated=datetime.datetime(2022, 7, 6, 20, 25, tzinfo=datetime.timezone.utc),
+        )
+        tracker = TwoWayTestTracker(issues=[tracker_issue])
+        sync = TrackerTwoWaySync(
+            project_key="twoway",
+            tracker=tracker,
+            notion_token="NOTION_TOKEN",
+            milestones_id="milestones_id",
+            tasks_id="tasks_id",
+            milestones_conflict_preference="tracker",
+            dry=True,
+        )
+
+        notion_page = {
+            "last_edited_time": "2022-07-06T20:25:00.000Z",
+        }
+
+        self.assertEqual(
+            sync._pick_direction("milestone", tracker_issue, notion_page, True, True),
+            "tracker_to_notion",
+        )
+        await sync.notion.aclose()
+
     async def test_tracker_to_notion_task_create_requires_parent(self):
         tracker = TwoWayTestTracker(
             issues=[

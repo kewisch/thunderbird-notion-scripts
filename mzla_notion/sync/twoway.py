@@ -47,6 +47,10 @@ class TrackerTwoWaySync(BaseSync):
         self.tasks_notion_to_tracker_create = tasks_notion_to_tracker_create
         self.milestones_tracker_to_notion_create = milestones_tracker_to_notion_create
         self.milestones_notion_to_tracker_create = milestones_notion_to_tracker_create
+        self.conflict_preference = {
+            "task": "notion_to_tracker" if tasks_conflict_preference == "notion" else "tracker_to_notion",
+            "milestone": "notion_to_tracker" if milestones_conflict_preference == "notion" else "tracker_to_notion",
+        }
         self.full_sync = full_sync
         self._task_create_cache = {}
         self._unlinked_notion_tasks = []
@@ -154,7 +158,7 @@ class TrackerTwoWaySync(BaseSync):
         if tracker_ts:
             tracker_ts = tracker_ts.replace(second=0, microsecond=0)
         notion_ts = self._page_timestamp(notion_page)
-        fallback = "tracker_to_notion" if entity_kind == "task" else "notion_to_tracker"
+        fallback = self.conflict_preference[entity_kind]
 
         if tracker_ts and notion_ts:
             if tracker_ts > notion_ts:
