@@ -1,5 +1,8 @@
 import datetime
+import json
 import unittest
+
+from freezegun import freeze_time
 
 from mzla_notion.sync.twoway import TrackerTwoWaySync
 from mzla_notion.tracker.common import Issue, IssueRef, IssueTracker, UserMap
@@ -34,14 +37,17 @@ class TwoWayTestTracker(IssueTracker):
             "notion_tasks_sprint_relation": "Sprint",
             "notion_issue_field": "Issue Link",
         }
+        filter_recent_by_since = kwargs.pop("filter_recent_by_since", False)
         property_names = {**defaults, **kwargs.pop("property_names", {})}
         super().__init__(property_names=property_names, **kwargs)
         self.user_map = StaticUserMap({})
         self.issues = {(issue.repo, issue.id): issue for issue in issues}
         self.recent_ids = set(recent_ids or [])
+        self.filter_recent_by_since = filter_recent_by_since
         self.updated_milestones = []
         self.updated_tasks = []
         self.created_tasks = []
+        self.recent_since_calls = []
 
     def parse_issueref(self, ref):
         parts = ref.split("/")
@@ -56,10 +62,13 @@ class TwoWayTestTracker(IssueTracker):
                 yield issue
 
     async def get_recent_issues_by_repo(self, since, sub_issues=False):
+        self.recent_since_calls.append(since)
         repos = {}
         for repo, issue_id in self.recent_ids:
             issue = self.issues.get((repo, issue_id))
             if issue:
+                if self.filter_recent_by_since and issue.updated_date and issue.updated_date < since:
+                    continue
                 repos.setdefault(repo, {})[issue_id] = issue
         return repos
 
