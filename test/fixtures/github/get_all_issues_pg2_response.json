@@ -79,7 +79,8 @@
                     },
                     "text": "https://www.notion.so/test2-18cdea4adcdf80b289e4ef4a36ca98de"
                   },
-                  "sprint": null
+                  "sprint": null,
+                  "updatedAt": "1970-01-01T00:00:00Z"
                 }
               ]
             },
@@ -184,7 +185,8 @@
                     "startDate": "2025-02-02",
                     "title": "Sprint 1",
                     "duration": 7
-                  }
+                  },
+                  "updatedAt": "1970-01-01T00:00:00Z"
                 }
               ]
             },
@@ -354,7 +356,8 @@
                     "startDate": "2025-02-09",
                     "title": "Sprint 2",
                     "duration": 7
-                  }
+                  },
+                  "updatedAt": "1970-01-01T00:00:00Z"
                 }
               ]
             },

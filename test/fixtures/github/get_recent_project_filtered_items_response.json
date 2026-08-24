@@ -1,0 +1,132 @@
+{
+  "data": {
+    "node": {
+      "__typename": "ProjectV2",
+      "items": {
+        "nodes": [
+          {
+            "updatedAt": "2025-07-01T09:00:00Z",
+            "content": {
+              "__typename": "Issue",
+              "number": 1,
+              "repository": {
+                "nameWithOwner": "kewisch/test",
+                "id": "R_kgDOMwGgpA",
+                "name": "test",
+                "isPrivate": false
+              },
+              "title": "Older same-day item",
+              "updatedAt": "2025-07-01T09:00:00Z",
+              "createdAt": "2025-07-01T09:00:00Z",
+              "closedAt": null,
+              "state": "OPEN",
+              "stateReason": null,
+              "url": "https://github.com/kewisch/test/issues/1",
+              "id": "I_project_filter_1",
+              "body": "",
+              "parent": null,
+              "labels": {
+                "nodes": []
+              },
+              "issueType": null,
+              "assignees": {
+                "nodes": []
+              },
+              "issueFieldValues": {
+                "nodes": []
+              },
+              "timelineItems": {
+                "nodes": []
+              },
+              "projectItems": {
+                "nodes": []
+              }
+            }
+          },
+          {
+            "updatedAt": "2025-07-01T13:00:00Z",
+            "content": {
+              "__typename": "Issue",
+              "number": 2,
+              "repository": {
+                "nameWithOwner": "other/test",
+                "id": "R_other",
+                "name": "test",
+                "isPrivate": false
+              },
+              "title": "Disallowed repo item",
+              "updatedAt": "2025-07-01T13:00:00Z",
+              "createdAt": "2025-07-01T13:00:00Z",
+              "closedAt": null,
+              "state": "OPEN",
+              "stateReason": null,
+              "url": "https://github.com/other/test/issues/2",
+              "id": "I_project_filter_2",
+              "body": "",
+              "parent": null,
+              "labels": {
+                "nodes": []
+              },
+              "issueType": null,
+              "assignees": {
+                "nodes": []
+              },
+              "issueFieldValues": {
+                "nodes": []
+              },
+              "timelineItems": {
+                "nodes": []
+              },
+              "projectItems": {
+                "nodes": []
+              }
+            }
+          },
+          {
+            "updatedAt": "2025-07-01T14:00:00Z",
+            "content": {
+              "__typename": "Issue",
+              "number": 3,
+              "repository": {
+                "nameWithOwner": "kewisch/test",
+                "id": "R_kgDOMwGgpA",
+                "name": "test",
+                "isPrivate": false
+              },
+              "title": "Allowed recent item",
+              "updatedAt": "2025-07-01T14:00:00Z",
+              "createdAt": "2025-07-01T14:00:00Z",
+              "closedAt": null,
+              "state": "OPEN",
+              "stateReason": null,
+              "url": "https://github.com/kewisch/test/issues/3",
+              "id": "I_project_filter_3",
+              "body": "",
+              "parent": null,
+              "labels": {
+                "nodes": []
+              },
+              "issueType": null,
+              "assignees": {
+                "nodes": []
+              },
+              "issueFieldValues": {
+                "nodes": []
+              },
+              "timelineItems": {
+                "nodes": []
+              },
+              "projectItems": {
+                "nodes": []
+              }
+            }
+          }
+        ],
+        "pageInfo": {
+          "hasNextPage": false,
+          "endCursor": null
+        }
+      }
+    }
+  }
+}

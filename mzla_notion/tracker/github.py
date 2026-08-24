@@ -13,7 +13,7 @@ from sgqlc.endpoint.httpx import HTTPXEndpoint
 from sgqlc.operation import Operation, GraphQLErrors
 
 from ..github_schema import schema
-from ..util import getnestedattr, AsyncRetryingClient
+from ..util import getnestedattr, AsyncRetryingClient, ensure_datetime
 
 from .common import UserMap, Sprint, IssueRef, Issue, User, IssueTracker
 from .github_fixups import GitHubFixups
@@ -652,6 +652,18 @@ class GitHub(IssueTracker, GitHubFixups):
         else:
             state = getnestedattr(lambda: gh_project_item.status.name, None)
 
+        # Updated date is the max between issue updated and project item updated
+        updated_date = max(
+            filter(
+                None,
+                [
+                    ghissue.updated_at,
+                    getnestedattr(lambda: gh_project_item.updated_at, None),
+                ],
+            ),
+            default=None,
+        )
+
         issue = GitHubIssue(
             repo=repo,
             id=str(ghissue.number),
@@ -665,7 +677,7 @@ class GitHub(IssueTracker, GitHubFixups):
             issue_type=getnestedattr(lambda: ghissue.issue_type.name, None),
             state=state,
             created_date=ghissue.created_at,
-            updated_date=ghissue.updated_at,
+            updated_date=updated_date,
             closed_date=ghissue.closed_at,
             start_date=getnestedattr(lambda: gh_project_item.start_date.date, None),
             end_date=getnestedattr(lambda: gh_project_item.target_date.date, None),
@@ -1280,6 +1292,7 @@ class GitHubProjectV2:
             project = op.node(id=self.database_id).__as__(schema.ProjectV2)
 
             project_items = project.items(first=100, after=cursor)
+            project_items.nodes.updated_at()
 
             issue = project_items.nodes.content.__as__(schema.Issue)
             issue.number()
@@ -1301,6 +1314,73 @@ class GitHubProjectV2:
             cursor = project_items.page_info.end_cursor
 
         return all_issue_numbers
+
+    async def get_issues_updated_since(self, since, allowed_repositories):
+        """Yield project issues whose project item was updated after ``since``."""
+        has_next_page = True
+        cursor = None
+        since = ensure_datetime(since)
+        query_parts = ["is:issue"]
+        if since:
+            query_parts.append(f"updated:>={since.date().isoformat()}")
+        if allowed_repositories:
+            repos = ",".join(sorted(allowed_repositories))
+            query_parts.append(f"repo:{repos}")
+        query = " ".join(query_parts)
+        page_count = 0
+        item_count = 0
+        non_issue_count = 0
+        disallowed_repo_count = 0
+        stale_count = 0
+        yielded_count = 0
+
+        while has_next_page:
+            op = Operation(schema.query_type)
+            project = op.node(id=self.database_id).__as__(schema.ProjectV2)
+
+            project_items = project.items(first=100, after=cursor, query=query)
+            project_items.nodes.updated_at()
+
+            issue = project_items.nodes.content.__as__(schema.Issue)
+            issue.number()
+            issue.repository.name_with_owner()
+            issue_field_ops(issue)
+
+            project_items.page_info.__fields__(has_next_page=True)
+            project_items.page_info.__fields__(end_cursor=True)
+            data = await self.endpoint(op)
+
+            project_items = (op + data).node.items
+            page_count += 1
+            for item in project_items.nodes:
+                item_count += 1
+                if not isinstance(item.content, schema.Issue):
+                    non_issue_count += 1
+                    continue
+                if item.content.repository.name_with_owner not in allowed_repositories:
+                    disallowed_repo_count += 1
+                    continue
+                if since and ensure_datetime(item.updated_at) < since:
+                    stale_count += 1
+                    continue
+                yielded_count += 1
+                yield item.content
+
+            has_next_page = project_items.page_info.has_next_page
+            cursor = project_items.page_info.end_cursor
+
+        logger.debug(
+            "GitHub project item scan project=%s since=%s query=%s pages=%d items=%d yielded=%d stale=%d non_issue=%d disallowed_repo=%d",
+            self.database_id,
+            since.isoformat() if since else "(none)",
+            query,
+            page_count,
+            item_count,
+            yielded_count,
+            stale_count,
+            non_issue_count,
+            disallowed_repo_count,
+        )
 
     async def field(self, name, default=None):
         """Get a specific field from the project."""

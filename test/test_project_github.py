@@ -10,13 +10,14 @@ from freezegun import freeze_time
 
 from mzla_notion.tracker.github import (
     GitHub,
+    GitHubProjectV2,
     GitHubUserMap,
     LabelCache,
     GitHubIssue,
     GitHubUser,
 )
 from mzla_notion.tracker.github_utils import build_scalar_field_update, field_value_changed
-from mzla_notion.tracker.common import IssueRef, Sprint
+from mzla_notion.tracker.common import Issue, IssueRef, Sprint
 
 from .handlers import BaseTestCase
 
@@ -87,6 +88,53 @@ class GitHubProjectTest(BaseTestCase):
         for name, issue, expected in cases:
             with self.subTest(name):
                 self.assertEqual(self.github.is_task_issue(issue), expected)
+
+    async def test_recent_issues_includes_project_item_updates(self):
+        async def no_recent_repo_issues(*args, **kwargs):
+            if False:
+                yield None
+
+        class ProjectWithRecentItem:
+            database_id = "project"
+
+            async def get_issues_updated_since(self, since, allowed_repositories):
+                yield types.SimpleNamespace()
+
+        async def parse_issue(ghissue, sub_issues=False):
+            return Issue(
+                repo="kewisch/test",
+                id="9",
+                title="Project item update",
+                description="",
+                state="Backlog",
+                priority="P2",
+                url="https://github.com/kewisch/test/issues/9",
+            )
+
+        self.github._get_repo_issues = no_recent_repo_issues
+        self.github._parse_issue = parse_issue
+        self.github.all_tasks_projects = [ProjectWithRecentItem()]
+        self.github.all_milestones_projects = []
+
+        issues = await self.github.get_recent_issues_by_repo(
+            datetime.datetime(2026, 8, 20, tzinfo=datetime.timezone.utc)
+        )
+
+        self.assertIn("9", issues["kewisch/test"])
+
+    async def test_project_item_recent_query_filters_by_updated_date_and_repo(self):
+        project = GitHubProjectV2(self.github.endpoint, "project-filter-test")
+
+        issues = [
+            issue
+            async for issue in project.get_issues_updated_since(
+                datetime.datetime(2025, 7, 1, 12, tzinfo=datetime.timezone.utc),
+                {"kewisch/test"},
+            )
+        ]
+
+        self.assertEqual([issue.number for issue in issues], [3])
+        self.assertEqual(len(self.github_handler.calls["get_recent_project_filtered_items"]), 1)
 
     async def test_github_get_issues_basics(self):
         issues = [issue async for issue in self.github.get_issues_by_number([], True)]

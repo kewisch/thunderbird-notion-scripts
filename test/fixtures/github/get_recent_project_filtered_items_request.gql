@@ -1,13 +1,21 @@
 query {
-repository(owner: "kewisch", name: "test") {
-issues(first: 50, after: null, orderBy: {field: UPDATED_AT, direction: DESC}) {
-pageInfo {
-hasNextPage
-endCursor
-}
+node(id: "project-filter-test") {
+__typename
+... on ProjectV2 {
+items(first: 100, after: null, query: "is:issue updated:>=2025-07-01 repo:kewisch/test") {
 nodes {
-title
+updatedAt
+content {
+__typename
+... on Issue {
 number
+repository {
+nameWithOwner
+id
+name
+isPrivate
+}
+title
 updatedAt
 createdAt
 closedAt
@@ -26,12 +34,6 @@ name
 repository {
 nameWithOwner
 }
-}
-repository {
-id
-nameWithOwner
-name
-isPrivate
 }
 labels(first: 100) {
 nodes {
@@ -190,6 +192,13 @@ duration
 }
 }
 }
+}
+}
+}
+}
+pageInfo {
+hasNextPage
+endCursor
 }
 }
 }

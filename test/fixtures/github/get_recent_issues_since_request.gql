@@ -1,7 +1,7 @@
 query {
 repository(owner: "kewisch", name: "test") {
 issues(
-first: 100
+first: 50
 after: null
 orderBy: {field: UPDATED_AT, direction: DESC}
 filterBy: {since: "2025-07-01T00:00:00Z"}
@@ -24,6 +24,10 @@ body
 parent {
 id
 number
+issueType {
+id
+name
+}
 repository {
 nameWithOwner
 }
@@ -47,6 +51,49 @@ assignees(first: 10) {
 nodes {
 id
 login
+}
+}
+issueFieldValues(first: 20) {
+nodes {
+__typename
+... on IssueFieldSingleSelectValue {
+name
+value
+optionId
+field {
+__typename
+... on IssueFieldSingleSelect {
+id
+}
+}
+}
+... on IssueFieldNumberValue {
+value
+field {
+__typename
+... on IssueFieldNumber {
+id
+}
+}
+}
+... on IssueFieldTextValue {
+value
+field {
+__typename
+... on IssueFieldText {
+id
+}
+}
+}
+... on IssueFieldDateValue {
+value
+field {
+__typename
+... on IssueFieldDate {
+id
+}
+}
+}
 }
 }
 timelineItems(last: 50, itemTypes: [CROSS_REFERENCED_EVENT]) {
@@ -77,6 +124,7 @@ login
 projectItems(first: 10, includeArchived: true) {
 nodes {
 id
+updatedAt
 project {
 __typename
 ... on ProjectV2 {
@@ -86,22 +134,6 @@ title
 }
 ... on Node {
 id
-}
-}
-priority: fieldValueByName(name: "Priority") {
-__typename
-... on ProjectV2ItemFieldSingleSelectValue {
-__typename
-name
-optionId
-... on ProjectV2ItemFieldValueCommon {
-field {
-__typename
-... on ProjectV2FieldCommon {
-id
-}
-}
-}
 }
 }
 start_date: fieldValueByName(name: "Start Date") {
@@ -145,18 +177,6 @@ id
 }
 name
 optionId
-}
-}
-link: fieldValueByName(name: "Link") {
-__typename
-... on ProjectV2ItemFieldTextValue {
-field {
-__typename
-... on ProjectV2FieldCommon {
-id
-}
-}
-text
 }
 }
 sprint: fieldValueByName(name: "Sprint") {

@@ -1,0 +1,14 @@
+{
+  "data": {
+    "node": {
+      "__typename": "ProjectV2",
+      "items": {
+        "nodes": [],
+        "pageInfo": {
+          "hasNextPage": false,
+          "endCursor": null
+        }
+      }
+    }
+  }
+}

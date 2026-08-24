@@ -125,6 +125,7 @@ login
 projectItems(first: 10, includeArchived: true) {
 nodes {
 id
+updatedAt
 project {
 __typename
 ... on ProjectV2 {

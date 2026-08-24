@@ -100,7 +100,8 @@
                         "id": "PVTSSF_jeoi24ntq1on23rn2ownf3r"
                       },
                       "text": "https://notion.so/example/test2-sub2-123123123"
-                    }
+                    },
+                    "updatedAt": "1970-01-01T00:00:00Z"
                   }
                 ]
               },
@@ -110,7 +111,8 @@
               "issueFieldValues": {
                 "nodes": []
               }
-            }
+            },
+            "updatedAt": "1970-01-01T00:00:00Z"
           },
           {
             "content": {
@@ -205,7 +207,8 @@
                       "startDate": "2025-02-02",
                       "title": "Sprint 1",
                       "duration": 7
-                    }
+                    },
+                    "updatedAt": "1970-01-01T00:00:00Z"
                   }
                 ]
               },
@@ -226,7 +229,8 @@
                   }
                 ]
               }
-            }
+            },
+            "updatedAt": "1970-01-01T00:00:00Z"
           },
           {
             "content": {
@@ -287,7 +291,8 @@
                       "startDate": "2025-02-16",
                       "title": "Sprint 3",
                       "duration": 7
-                    }
+                    },
+                    "updatedAt": "1970-01-01T00:00:00Z"
                   }
                 ]
               },
@@ -297,7 +302,8 @@
               "issueFieldValues": {
                 "nodes": []
               }
-            }
+            },
+            "updatedAt": "1970-01-01T00:00:00Z"
           },
           {
             "content": {
@@ -368,7 +374,8 @@
                       "startDate": "2025-03-02",
                       "title": "Sprint 5",
                       "duration": 7
-                    }
+                    },
+                    "updatedAt": "1970-01-01T00:00:00Z"
                   }
                 ]
               },
@@ -378,7 +385,8 @@
               "issueFieldValues": {
                 "nodes": []
               }
-            }
+            },
+            "updatedAt": "1970-01-01T00:00:00Z"
           }
         ],
         "pageInfo": {

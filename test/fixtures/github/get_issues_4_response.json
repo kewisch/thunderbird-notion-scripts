@@ -63,7 +63,8 @@
                 "title": "Sprint 1",
                 "duration": 7
               },
-              "link": null
+              "link": null,
+              "updatedAt": "1970-01-01T00:00:00Z"
             },
             {
               "id": "PVTI_lAHOAAlD3s4AxVDIzgXcyAk",
@@ -99,7 +100,8 @@
                 "optionId": "f75ad846"
               },
               "link": null,
-              "sprint": null
+              "sprint": null,
+              "updatedAt": "1970-01-01T00:00:00Z"
             }
           ]
         },
