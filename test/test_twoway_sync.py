@@ -72,6 +72,11 @@ class TwoWayTestTracker(IssueTracker):
                 repos.setdefault(repo, {})[issue_id] = issue
         return repos
 
+    async def collect_tracker_milestones(self, milestones_issue_type, sub_issues=False):
+        for issue in self.issues.values():
+            if issue.issue_type == milestones_issue_type:
+                yield issue
+
     async def update_milestone_issue(self, old_issue, new_issue):
         self.updated_milestones.append((old_issue, new_issue))
 
@@ -466,6 +471,94 @@ class TwoWaySyncTest(BaseTestCase):
 
         self.assertEqual(self.respx.routes["pages_create"].calls.call_count, 0)
 
+    async def test_recent_milestone_issue_is_not_counted_as_task(self):
+        tracker = TwoWayTestTracker(
+            issues=[
+                self._issue(
+                    "1253",
+                    updated=datetime.datetime(2025, 1, 1, tzinfo=datetime.timezone.utc),
+                    parents=[IssueRef(repo="repo", id="1000")],
+                    issue_type="Milestone",
+                    title="Milestone with epic parent",
+                ),
+            ],
+            recent_ids=[("repo", "1253")],
+        )
+
+        with self.assertLogs("project_sync", level="INFO") as logs:
+            await self._run_sync(
+                tracker,
+                tasks_tracker_to_notion=True,
+                tasks_tracker_to_notion_create=True,
+                milestones_issue_type="Milestone",
+                milestones_tracker_to_notion=True,
+                milestones_tracker_to_notion_create=False,
+                full_sync=False,
+            )
+
+        self.assertEqual(self.respx.routes["pages_create"].calls.call_count, 0)
+        output = "\n".join(logs.output)
+        self.assertRegex(output, r"recent_tracker_refs=0 recent_tracker_tasks=0")
+        self._assert_stats_row(logs, "created from tracker", 0, 0)
+
+    async def test_recent_epic_issue_is_not_counted_as_task(self):
+        tracker = TwoWayTestTracker(
+            issues=[
+                self._issue(
+                    "1254",
+                    updated=datetime.datetime(2025, 1, 1, tzinfo=datetime.timezone.utc),
+                    parents=[IssueRef(repo="repo", id="1000")],
+                    issue_type="Epic",
+                    title="Epic with parent",
+                ),
+            ],
+            recent_ids=[("repo", "1254")],
+        )
+
+        with self.assertLogs("project_sync", level="INFO") as logs:
+            await self._run_sync(
+                tracker,
+                tasks_tracker_to_notion=True,
+                tasks_tracker_to_notion_create=True,
+                milestones_issue_type="Milestone",
+                epics_issue_type="Epic",
+                full_sync=False,
+            )
+
+        self.assertEqual(self.respx.routes["pages_create"].calls.call_count, 0)
+        output = "\n".join(logs.output)
+        self.assertRegex(output, r"recent_tracker_refs=0 recent_tracker_tasks=0")
+        self._assert_stats_row(logs, "created from tracker", 0, 0)
+
+    async def test_recent_child_task_under_milestone_parent_is_still_task_candidate(self):
+        tracker = TwoWayTestTracker(
+            issues=[
+                self._issue(
+                    "1255",
+                    updated=datetime.datetime(2025, 1, 1, tzinfo=datetime.timezone.utc),
+                    parents=[IssueRef(repo="repo", id="1000")],
+                    issue_type="Task",
+                    title="Task under milestone",
+                ),
+            ],
+            recent_ids=[("repo", "1255")],
+        )
+
+        with self.assertLogs("project_sync", level="INFO") as logs:
+            await self._run_sync(
+                tracker,
+                tasks_tracker_to_notion=True,
+                tasks_tracker_to_notion_create=True,
+                milestones_issue_type="Milestone",
+                epics_issue_type="Epic",
+                full_sync=False,
+            )
+
+        self.assertEqual(self.respx.routes["pages_create"].calls.call_count, 1)
+        output = "\n".join(logs.output)
+        self.assertRegex(output, r"recent_tracker_refs=1 recent_tracker_tasks=1")
+        self._assert_stats_row(logs, "created from tracker", 1, 0)
+
     async def test_tracker_to_notion_milestone_create(self):
         tracker = TwoWayTestTracker(
             issues=[
@@ -488,6 +581,35 @@ class TwoWaySyncTest(BaseTestCase):
         )
 
         self.assertEqual(self.respx.routes["pages_create"].calls.call_count, 1)
+
+    @freeze_time("2026-08-24T00:01:00Z", real_asyncio=True)
+    async def test_tracker_to_notion_typed_milestone_create(self):
+        tracker = TwoWayTestTracker(
+            issues=[
+                self._issue(
+                    "997",
+                    updated=datetime.datetime(2026, 8, 24, 0, 0, tzinfo=datetime.timezone.utc),
+                    title="Typed Milestone",
+                    issue_type="Milestone",
+                ),
+            ],
+            recent_ids=[("repo", "997")],
+        )
+
+        with self.assertLogs("project_sync", level="INFO") as logs:
+            await self._run_sync(
+                tracker,
+                milestones_issue_type="Milestone",
+                milestones_tracker_to_notion=True,
+                milestones_tracker_to_notion_create=True,
+                milestones_notion_to_tracker=False,
+                tasks_tracker_to_notion=True,
+                tasks_tracker_to_notion_create=True,
+                full_sync=False,
+            )
+
+        self.assertEqual(self.respx.routes["pages_create"].calls.call_count, 1)
+        self._assert_stats_row(logs, "created from tracker", 0, 1)
 
     async def test_tracker_to_notion_milestone_create_dry_run(self):
         tracker = TwoWayTestTracker(

@@ -355,6 +355,25 @@ class TrackerTwoWaySync(BaseSync):
 
         return tracker_issues
 
+    def _filter_task_issues_by_repo(self, issues_by_repo):
+        task_issues = defaultdict(dict)
+        skipped = 0
+
+        for repo, issues in issues_by_repo.items():
+            for issue_id, issue in issues.items():
+                if self._is_task_issue(issue):
+                    task_issues[repo][issue_id] = issue
+                else:
+                    skipped += 1
+
+        if skipped:
+            logger.debug("Filtered %d recent tracker issues from task processing", skipped)
+
+        return task_issues
+
+    def _filter_task_issues(self, issues):
+        return {key: issue for key, issue in issues.items() if self._is_task_issue(issue)}
+
     async def _discover_unlinked_notion_tasks(self, since):
         pages = []
         issue_filter = {
@@ -839,8 +858,9 @@ class TrackerTwoWaySync(BaseSync):
         )
         if fetch_recent:
             fetch_since = since if not self.full_sync else datetime.datetime(1970, 1, 1, tzinfo=datetime.UTC)
-            recent_tasks_by_repo = await self.tracker.get_recent_issues_by_repo(fetch_since, sub_issues=False)
-            recent_milestones_by_repo = recent_tasks_by_repo
+            recent_issues_by_repo = await self.tracker.get_recent_issues_by_repo(fetch_since, sub_issues=False)
+            recent_tasks_by_repo = self._filter_task_issues_by_repo(recent_issues_by_repo)
+            recent_milestones_by_repo = recent_issues_by_repo
         else:
             logger.info("Two-way sync not fetching recent tracker issues because all tracker directions are disabled")
 
@@ -878,6 +898,7 @@ class TrackerTwoWaySync(BaseSync):
         )
 
         task_issues = await self._load_tracker_candidates(task_candidates, recent_tasks_by_repo)
+        task_issues = self._filter_task_issues(task_issues)
         milestone_issues = await self._load_tracker_candidates(milestone_candidates, recent_milestones_by_repo)
         logger.info(
             "Two-way sync loaded tracker candidates tasks=%d milestones=%d",
