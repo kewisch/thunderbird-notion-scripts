@@ -544,7 +544,7 @@ class TrackerTwoWaySync(BaseSync):
             self.logger.debug("\t" + str(notion_data))
             await self.epics_db.update_page(page, notion_data, diff_log=False)
             self._record_epic_cache_update(page, tracker_issue)
-        else:
+        elif not self.hide_unchanged:
             self.logger.info(f"Unchanged epic {tracker_issue.repo}#{tracker_issue.id} - {tracker_issue.title}")
         return changed
 
@@ -595,7 +595,7 @@ class TrackerTwoWaySync(BaseSync):
             if not self.dry:
                 await self.tracker.update_milestone_issue(tracker_issue, new_issue)
             return True
-        elif not skip_unchanged_msg:
+        elif not skip_unchanged_msg and not self.hide_unchanged:
             self.logger.info(
                 f"Unchanged epic {tracker_issue.id} - {tracker_issue.title} ({tracker_issue.url} / {new_issue.notion_url})"
             )
@@ -694,7 +694,7 @@ class TrackerTwoWaySync(BaseSync):
             self.logger.debug("\t" + str(notion_data))
             await self.milestones_db.update_page(page, notion_data, diff_log=False)
             self._record_milestone_cache_update(page, tracker_issue)
-        else:
+        elif not self.hide_unchanged:
             self.logger.info(f"Unchanged milestone {tracker_issue.repo}#{tracker_issue.id} - {tracker_issue.title}")
             if candidate_debug:
                 self.logger.debug(f"  timestamps: {candidate_debug}")
@@ -755,7 +755,7 @@ class TrackerTwoWaySync(BaseSync):
             if not self.dry:
                 await self.tracker.update_milestone_issue(tracker_issue, new_issue)
             return True
-        elif not skip_unchanged_msg:
+        elif not skip_unchanged_msg and not self.hide_unchanged:
             self.logger.info(
                 f"Unchanged milestone {tracker_issue.id} - {tracker_issue.title} ({tracker_issue.url} / {new_issue.notion_url})"
             )
@@ -809,7 +809,7 @@ class TrackerTwoWaySync(BaseSync):
             if not self.dry:
                 await self.tracker.update_task_issue(tracker_issue, new_issue)
             return True
-        else:
+        elif not self.hide_unchanged:
             self.logger.info(f"Unchanged task {tracker_issue.repo}#{tracker_issue.id}")
             if candidate_debug:
                 self.logger.debug(f"  timestamps: {candidate_debug}")
