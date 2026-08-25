@@ -78,17 +78,13 @@ class TrackerTwoWaySync(BaseSync):
         self._task_create_cache = {}
         self._unlinked_notion_tasks = []
         self._task_discovery_since = None
-        self._milestones_notion_to_tracker_create_unsupported = False
-        self._epics_notion_to_tracker_create_unsupported = False
 
         if self.milestones_notion_to_tracker_create:
             self.logger.warning("milestones_notion_to_tracker_create is not supported in v2; skipping")
             self.milestones_notion_to_tracker_create = False
-            self._milestones_notion_to_tracker_create_unsupported = True
         if self.epics_notion_to_tracker_create:
             self.logger.warning("epics_notion_to_tracker_create is not supported in v2; skipping")
             self.epics_notion_to_tracker_create = False
-            self._epics_notion_to_tracker_create_unsupported = True
 
     async def _async_init(self):
         if self.twoway_cache_enabled:
@@ -667,7 +663,7 @@ class TrackerTwoWaySync(BaseSync):
 
         return notion_data
 
-    async def _sync_milestone_epic_relation_from_tracker(self, tracker_issue, page):
+    async def _sync_milestone_epic_relation_from_tracker(self, tracker_issue, page, candidate_debug=None):
         if not self.epics_db or not self.propnames.get("notion_milestones_epic_relation"):
             return False
 
@@ -678,7 +674,9 @@ class TrackerTwoWaySync(BaseSync):
             self.logger.info(
                 f"Updating milestone epic relation (Tracker->Notion) {page.get('url')} - {tracker_issue.title}"
             )
-            self.milestones_db.page_diff(relation_data, page, log=self.logger.isEnabledFor(logging.DEBUG))
+            if candidate_debug:
+                self.logger.debug(f"  timestamps: {candidate_debug}")
+            self.milestones_db.page_diff(relation_data, page, log=True, log_level=logging.INFO)
             self.logger.debug(relation_data)
             await self.milestones_db.update_page(page, relation_data, diff_log=False)
             self._record_milestone_cache_update(page, tracker_issue)
@@ -691,14 +689,15 @@ class TrackerTwoWaySync(BaseSync):
         if changed:
             self.logger.info(f"Updating milestone (Tracker->Notion) {page.get('url')} - {tracker_issue.title}")
             if candidate_debug:
-                self.logger.debug(f"  candidate: {candidate_debug}")
-            self.logger.debug("  notion changes:")
-            self.milestones_db.page_diff(notion_data, page, log=self.logger.isEnabledFor(logging.DEBUG))
+                self.logger.debug(f"  timestamps: {candidate_debug}")
+            self.milestones_db.page_diff(notion_data, page, log=True, log_level=logging.INFO)
             self.logger.debug("\t" + str(notion_data))
             await self.milestones_db.update_page(page, notion_data, diff_log=False)
             self._record_milestone_cache_update(page, tracker_issue)
         else:
             self.logger.info(f"Unchanged milestone {tracker_issue.repo}#{tracker_issue.id} - {tracker_issue.title}")
+            if candidate_debug:
+                self.logger.debug(f"  timestamps: {candidate_debug}")
         return changed
 
     async def synchronize_single_milestone(self, tracker_issue, page, skip_unchanged_msg=False, candidate_debug=None):
@@ -744,13 +743,13 @@ class TrackerTwoWaySync(BaseSync):
         if self.milestones_issue_type:
             new_issue.issue_type = self.milestones_issue_type
 
-        await self._sync_milestone_epic_relation_from_tracker(tracker_issue, page)
+        await self._sync_milestone_epic_relation_from_tracker(tracker_issue, page, candidate_debug)
         needs_update = self.tracker.should_update_milestone_issue(tracker_issue, new_issue)
 
         if needs_update:
             self.logger.info(f"Updating milestone (Notion->Tracker) {tracker_issue.url} - {new_issue.title}")
             if candidate_debug:
-                self.logger.debug(f"  candidate: {candidate_debug}")
+                self.logger.debug(f"  timestamps: {candidate_debug}")
             diff_dataclasses(tracker_issue, new_issue, log=self.logger.debug)
 
             if not self.dry:
@@ -760,6 +759,8 @@ class TrackerTwoWaySync(BaseSync):
             self.logger.info(
                 f"Unchanged milestone {tracker_issue.id} - {tracker_issue.title} ({tracker_issue.url} / {new_issue.notion_url})"
             )
+            if candidate_debug:
+                self.logger.debug(f"  timestamps: {candidate_debug}")
         return False
 
     def _get_task_tracker_issue_from_notion(self, tracker_issue, page):
@@ -1090,10 +1091,10 @@ class TrackerTwoWaySync(BaseSync):
             "tasks_create_skipped_closed": 0,
             "tasks_create_skipped_unsupported_path": 0,
             "tasks_create_link_back_retry": 0,
-            "milestones_create_skipped_unsupported_path": 1
-            if self._milestones_notion_to_tracker_create_unsupported
-            else 0,
-            "epics_create_skipped_unsupported_path": 1 if self._epics_notion_to_tracker_create_unsupported else 0,
+            "milestones_create_skipped_closed": 0,
+            "milestones_create_skipped_wrong_type": 0,
+            "epics_create_skipped_closed": 0,
+            "epics_create_skipped_wrong_type": 0,
         }
 
     async def _add_tracker_create_candidates(
@@ -1208,7 +1209,7 @@ class TrackerTwoWaySync(BaseSync):
                     if self.epics_tracker_to_notion and self.epics_tracker_to_notion_create:
                         if self._is_epic_issue(issue):
                             if issue.closed_date or self._is_closed_status(issue.state):
-                                stats["epics_create_skipped_unsupported_path"] += 1
+                                stats["epics_create_skipped_closed"] += 1
                                 continue
                             page = await self._create_epic_in_notion_from_tracker(issue)
                             if not page:
@@ -1219,7 +1220,7 @@ class TrackerTwoWaySync(BaseSync):
                             if "properties" in page:
                                 await self.synchronize_single_epic_from_tracker(issue, page)
                         else:
-                            stats["epics_create_skipped_unsupported_path"] += 1
+                            stats["epics_create_skipped_wrong_type"] += 1
                     continue
 
                 direction, candidate_debug = self._candidate_debug(
@@ -1258,7 +1259,7 @@ class TrackerTwoWaySync(BaseSync):
                     if self.milestones_tracker_to_notion and self.milestones_tracker_to_notion_create:
                         if self._is_milestone_issue(issue):
                             if issue.closed_date or self._is_closed_status(issue.state):
-                                stats["milestones_create_skipped_unsupported_path"] += 1
+                                stats["milestones_create_skipped_closed"] += 1
                                 continue
                             page = await self._create_milestone_in_notion_from_tracker(issue)
                             if not page:
@@ -1270,7 +1271,7 @@ class TrackerTwoWaySync(BaseSync):
                             if "properties" in page:
                                 await self.synchronize_single_milestone_from_tracker(issue, page)
                         else:
-                            stats["milestones_create_skipped_unsupported_path"] += 1
+                            stats["milestones_create_skipped_wrong_type"] += 1
                     continue
 
                 direction, candidate_debug = self._candidate_debug(
@@ -1507,8 +1508,14 @@ class TrackerTwoWaySync(BaseSync):
             stats["tasks_create_link_back_retry"],
         )
         self.logger.info(
-            "Two-way sync stats epic create skipped unsupported=%5d",
-            stats["epics_create_skipped_unsupported_path"],
+            "Two-way sync stats milestone create skipped closed=%5d wrong_type=%5d",
+            stats["milestones_create_skipped_closed"],
+            stats["milestones_create_skipped_wrong_type"],
+        )
+        self.logger.info(
+            "Two-way sync stats epic create skipped closed=%5d wrong_type=%5d",
+            stats["epics_create_skipped_closed"],
+            stats["epics_create_skipped_wrong_type"],
         )
 
     async def synchronize(self):
