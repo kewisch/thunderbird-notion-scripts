@@ -14,7 +14,7 @@ from notion_client.helpers import async_iterate_paginated_api
 from .base import BaseSync
 from .twoway_cache import TwoWayNotionCache
 
-from ..util import canonical_notion_url, ensure_date, getnestedattr
+from ..util import canonical_notion_url, ensure_date, getnestedattr, guard_notion_query_response
 from ..tracker.common import IssueRef
 from ..util import diff_dataclasses
 from ..notion_data import CustomNotionToMarkdown
@@ -429,9 +429,13 @@ class TrackerTwoWaySync(BaseSync):
     async def _discover_recent_notion_pages(self, entity_kind, database_id, team_prop, since):
         pages = []
         query_filter = self._combined_filter(self._team_filter(team_prop), self._recent_filter(since))
+        query_func = guard_notion_query_response(
+            self.notion.databases.query,
+            context=f"Notion database query ({database_id})",
+        )
 
         async for page in async_iterate_paginated_api(
-            self.notion.databases.query,
+            query_func,
             database_id=database_id,
             filter=query_filter,
         ):
@@ -541,7 +545,9 @@ class TrackerTwoWaySync(BaseSync):
             self.logger.debug("  notion changes:")
             self.epics_db.page_diff(notion_data, page, log=self.logger.isEnabledFor(logging.DEBUG))
             self.logger.debug("\t" + str(notion_data))
-            await self.epics_db.update_page(page, notion_data, diff_log=False)
+            updated_page = await self.epics_db.update_page(page, notion_data, diff_log=False, return_page=True)
+            if updated_page:
+                page = updated_page
             self._record_epic_cache_update(page, tracker_issue)
         elif not self.hide_unchanged:
             self.logger.info(f"Unchanged epic {tracker_issue.repo}#{tracker_issue.id} - {tracker_issue.title}")
@@ -677,7 +683,9 @@ class TrackerTwoWaySync(BaseSync):
                 self.logger.debug(f"  timestamps: {candidate_debug}")
             self.milestones_db.page_diff(relation_data, page, log=True, log_level=logging.INFO)
             self.logger.debug(relation_data)
-            await self.milestones_db.update_page(page, relation_data, diff_log=False)
+            updated_page = await self.milestones_db.update_page(page, relation_data, diff_log=False, return_page=True)
+            if updated_page:
+                page = updated_page
             self._record_milestone_cache_update(page, tracker_issue)
         return changed
 
@@ -691,7 +699,9 @@ class TrackerTwoWaySync(BaseSync):
                 self.logger.debug(f"  timestamps: {candidate_debug}")
             self.milestones_db.page_diff(notion_data, page, log=True, log_level=logging.INFO)
             self.logger.debug("\t" + str(notion_data))
-            await self.milestones_db.update_page(page, notion_data, diff_log=False)
+            updated_page = await self.milestones_db.update_page(page, notion_data, diff_log=False, return_page=True)
+            if updated_page:
+                page = updated_page
             self._record_milestone_cache_update(page, tracker_issue)
         elif not self.hide_unchanged:
             self.logger.info(f"Unchanged milestone {tracker_issue.repo}#{tracker_issue.id} - {tracker_issue.title}")
@@ -956,8 +966,12 @@ class TrackerTwoWaySync(BaseSync):
             }
             query_filter = {"and": [team_filter, issue_filter]}
 
-        async for page in async_iterate_paginated_api(
+        query_func = guard_notion_query_response(
             self.notion.databases.query,
+            context=f"Notion database query ({self.tasks_db.database_id})",
+        )
+        async for page in async_iterate_paginated_api(
+            query_func,
             database_id=self.tasks_db.database_id,
             filter=query_filter,
         ):
@@ -998,8 +1012,12 @@ class TrackerTwoWaySync(BaseSync):
                 ]
             }
 
-        async for page in async_iterate_paginated_api(
+        query_func = guard_notion_query_response(
             self.notion.databases.query,
+            context=f"Notion database query ({self.tasks_db.database_id})",
+        )
+        async for page in async_iterate_paginated_api(
+            query_func,
             database_id=self.tasks_db.database_id,
             filter=query_filter,
         ):
@@ -1055,12 +1073,11 @@ class TrackerTwoWaySync(BaseSync):
                 {"url": tracker_issue.url, "name": self.tracker.format_issueref_short(tracker_issue)}
             ]
         }
-        changed = await self.tasks_db.update_page(page, notion_data)
-        if changed:
-            page = dict(page)
-            page["properties"] = {**page.get("properties", {}), **self.tasks_db.dict_to_page(dict(notion_data))}
+        updated_page = await self.tasks_db.update_page(page, notion_data, return_page=True)
+        if updated_page:
+            page = updated_page
             await self._record_task_cache_update(page, tracker_issue)
-        return changed
+        return page
 
     def _new_stats(self):
         return {
@@ -1359,12 +1376,14 @@ class TrackerTwoWaySync(BaseSync):
                 return
 
         try:
-            await self._link_task_page_to_issue(page, created_issue)
+            page = await self._link_task_page_to_issue(page, created_issue)
         except Exception:
             stats["tasks_create_link_back_retry"] += 1
             self.logger.warning(
-                "Task create link-back failed for %s, will retry link update in same run before re-creating",
+                "Created tracker task %s but could not link it back to %s; a later run may create a duplicate",
+                created_issue.url,
                 page.get("url"),
+                exc_info=True,
             )
             return
 
@@ -1516,7 +1535,10 @@ class TrackerTwoWaySync(BaseSync):
             since = None
             self.logger.info("Two-way sync window full_sync=True")
         else:
-            since = timestamp - datetime.timedelta(seconds=self.incremental_lookback_seconds)
+            since = (timestamp - datetime.timedelta(seconds=self.incremental_lookback_seconds)).replace(
+                second=0,
+                microsecond=0,
+            )
             self.logger.info(
                 "Two-way sync window full_sync=False lookback_seconds=%d since=%s",
                 self.incremental_lookback_seconds,
