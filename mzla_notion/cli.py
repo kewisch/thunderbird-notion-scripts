@@ -250,6 +250,7 @@ async def cmd_synchronize(
                     dry=effective_dry_run or project.get("tracker_dry_run", False),
                     user_map=user_map.get("github") or {},
                     milestones_issue_type=project.get("milestones_issue_type", None),
+                    epics_issue_type=project.get("epics_issue_type", "Epic"),
                     property_names=project.get("properties", {}),
                 )
             else:
@@ -259,6 +260,7 @@ async def cmd_synchronize(
                 project_key=key,
                 tracker=tracker,
                 notion_token=os.environ["NOTION_TOKEN"],
+                epics_id=project.get("notion_epics_id", None),
                 milestones_id=project["notion_milestones_id"],
                 tasks_id=project["notion_tasks_id"],
                 sprint_id=project.get("notion_sprints_id", None),
@@ -266,6 +268,9 @@ async def cmd_synchronize(
                 milestones_body_sync_if_empty=project.get("milestones_body_sync_if_empty", False),
                 milestones_create_from_tracker=False,
                 tasks_body_sync=project.get("tasks_body_sync", False),
+                epics_tracker_prefix=project.get("epics_tracker_prefix", ""),
+                epics_extra_label=project.get("epics_extra_label", ""),
+                epics_issue_type=project.get("epics_issue_type", "Epic"),
                 milestones_tracker_prefix=project.get("milestones_tracker_prefix", ""),
                 milestones_extra_label=project.get("milestones_extra_label", ""),
                 milestones_issue_type=project.get("milestones_issue_type", None),
@@ -281,12 +286,17 @@ async def cmd_synchronize(
                 tasks_notion_to_tracker=project.get("tasks_notion_to_tracker", False),
                 milestones_tracker_to_notion=project.get("milestones_tracker_to_notion", False),
                 milestones_notion_to_tracker=project.get("milestones_notion_to_tracker", True),
+                epics_tracker_to_notion=project.get("epics_tracker_to_notion", False),
+                epics_notion_to_tracker=project.get("epics_notion_to_tracker", True),
                 tasks_tracker_to_notion_create=project.get("tasks_tracker_to_notion_create", True),
                 tasks_notion_to_tracker_create=project.get("tasks_notion_to_tracker_create", False),
                 milestones_tracker_to_notion_create=project.get("milestones_tracker_to_notion_create", False),
                 milestones_notion_to_tracker_create=project.get("milestones_notion_to_tracker_create", False),
+                epics_tracker_to_notion_create=project.get("epics_tracker_to_notion_create", False),
+                epics_notion_to_tracker_create=project.get("epics_notion_to_tracker_create", False),
                 tasks_conflict_preference=project.get("tasks_conflict_preference", "tracker"),
                 milestones_conflict_preference=project.get("milestones_conflict_preference", "notion"),
+                epics_conflict_preference=project.get("epics_conflict_preference", "notion"),
                 tracker_kind=tracker_kind,
                 twoway_cache_enabled=(
                     twoway_cache if twoway_cache is not None else project.get("twoway_cache_enabled", False)

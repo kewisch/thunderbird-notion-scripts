@@ -36,8 +36,13 @@ class TrackerTwoWaySync(BaseSync):
         tasks_notion_to_tracker_create=False,
         milestones_tracker_to_notion_create=False,
         milestones_notion_to_tracker_create=False,
+        epics_tracker_to_notion=False,
+        epics_notion_to_tracker=True,
+        epics_tracker_to_notion_create=False,
+        epics_notion_to_tracker_create=False,
         tasks_conflict_preference="tracker",
         milestones_conflict_preference="notion",
+        epics_conflict_preference="notion",
         tracker_kind=None,
         twoway_cache_enabled=False,
         twoway_cache_path=".cache/mzla-notion/twoway.sqlite3",
@@ -51,13 +56,18 @@ class TrackerTwoWaySync(BaseSync):
         self.tasks_notion_to_tracker = tasks_notion_to_tracker
         self.milestones_tracker_to_notion = milestones_tracker_to_notion
         self.milestones_notion_to_tracker = milestones_notion_to_tracker
+        self.epics_tracker_to_notion = epics_tracker_to_notion
+        self.epics_notion_to_tracker = epics_notion_to_tracker
         self.tasks_tracker_to_notion_create = tasks_tracker_to_notion_create
         self.tasks_notion_to_tracker_create = tasks_notion_to_tracker_create
         self.milestones_tracker_to_notion_create = milestones_tracker_to_notion_create
         self.milestones_notion_to_tracker_create = milestones_notion_to_tracker_create
+        self.epics_tracker_to_notion_create = epics_tracker_to_notion_create
+        self.epics_notion_to_tracker_create = epics_notion_to_tracker_create
         self.conflict_preference = {
             "task": "notion_to_tracker" if tasks_conflict_preference == "notion" else "tracker_to_notion",
             "milestone": "notion_to_tracker" if milestones_conflict_preference == "notion" else "tracker_to_notion",
+            "epic": "notion_to_tracker" if epics_conflict_preference == "notion" else "tracker_to_notion",
         }
         self.tracker_kind = tracker_kind or type(self.tracker).__name__
         self.twoway_cache_enabled = twoway_cache_enabled
@@ -69,11 +79,16 @@ class TrackerTwoWaySync(BaseSync):
         self._unlinked_notion_tasks = []
         self._task_discovery_since = None
         self._milestones_notion_to_tracker_create_unsupported = False
+        self._epics_notion_to_tracker_create_unsupported = False
 
         if self.milestones_notion_to_tracker_create:
             self.logger.warning("milestones_notion_to_tracker_create is not supported in v2; skipping")
             self.milestones_notion_to_tracker_create = False
             self._milestones_notion_to_tracker_create_unsupported = True
+        if self.epics_notion_to_tracker_create:
+            self.logger.warning("epics_notion_to_tracker_create is not supported in v2; skipping")
+            self.epics_notion_to_tracker_create = False
+            self._epics_notion_to_tracker_create_unsupported = True
 
     async def _async_init(self):
         if self.twoway_cache_enabled:
@@ -95,20 +110,31 @@ class TrackerTwoWaySync(BaseSync):
         if not use_single_task_query:
             async with asyncio.TaskGroup() as tg:
                 tg.create_task(super()._async_init())
+                if self.epics_db:
+                    epics_issues = tg.create_task(
+                        self._discover_notion_issues(self.epics_db.database_id, self.propnames["notion_epics_team"])
+                    )
                 milestones_issues = tg.create_task(
                     self._discover_notion_issues(
                         self.milestones_db.database_id, self.propnames["notion_milestones_team"]
                     )
                 )
 
+            self._notion_epic_issues = epics_issues.result() if self.epics_db else {}
             self._notion_milestone_issues = milestones_issues.result()
             self._unlinked_notion_tasks = []
             return
 
         async with asyncio.TaskGroup() as tg:
+            if self.epics_db:
+                valid_epics = tg.create_task(self.epics_db.validate_props())
             valid_milestones = tg.create_task(self.milestones_db.validate_props())
             valid_tasks = tg.create_task(self.tasks_db.validate_props())
             tasks_partitioned = tg.create_task(self._discover_notion_tasks_partitioned(self._task_discovery_since))
+            if self.epics_db:
+                epics_issues = tg.create_task(
+                    self._discover_notion_issues(self.epics_db.database_id, self.propnames["notion_epics_team"])
+                )
             milestones_issues = tg.create_task(
                 self._discover_notion_issues(self.milestones_db.database_id, self.propnames["notion_milestones_team"])
             )
@@ -116,6 +142,8 @@ class TrackerTwoWaySync(BaseSync):
             if self.sprint_db:
                 sprint_pages = tg.create_task(self.sprint_db.get_all_pages())
 
+        if self.epics_db and not valid_epics.result():
+            raise Exception("Epic schema failed to validate")
         if not valid_milestones.result():
             raise Exception("Milestone schema failed to validate")
         if not valid_tasks.result():
@@ -124,6 +152,7 @@ class TrackerTwoWaySync(BaseSync):
         linked, unlinked = tasks_partitioned.result()
         self._notion_tasks_issues = linked
         self._unlinked_notion_tasks = unlinked
+        self._notion_epic_issues = epics_issues.result() if self.epics_db else {}
         self._notion_milestone_issues = milestones_issues.result()
 
         if self.sprint_db:
@@ -137,10 +166,19 @@ class TrackerTwoWaySync(BaseSync):
         self._notion_milestone_issues, duplicate_milestones = self._notion_cache.load_linked_pages(
             "milestone", self.milestones_db.database_id
         )
+        if self.epics_db:
+            self._notion_epic_issues, duplicate_epics = self._notion_cache.load_linked_pages(
+                "epic", self.epics_db.database_id
+            )
+        else:
+            self._notion_epic_issues, duplicate_epics = {}, set()
         self._log_duplicate_cache_refs("task", duplicate_tasks)
         self._log_duplicate_cache_refs("milestone", duplicate_milestones)
+        self._log_duplicate_cache_refs("epic", duplicate_epics)
 
         async with asyncio.TaskGroup() as tg:
+            if self.epics_db:
+                valid_epics = tg.create_task(self.epics_db.validate_props())
             valid_milestones = tg.create_task(self.milestones_db.validate_props())
             valid_tasks = tg.create_task(self.tasks_db.validate_props())
             changed_tasks = tg.create_task(
@@ -159,10 +197,21 @@ class TrackerTwoWaySync(BaseSync):
                     self._task_discovery_since,
                 )
             )
+            if self.epics_db:
+                changed_epics = tg.create_task(
+                    self._discover_recent_notion_pages(
+                        "epic",
+                        self.epics_db.database_id,
+                        self.propnames.get("notion_epics_team"),
+                        self._task_discovery_since,
+                    )
+                )
 
             if self.sprint_db:
                 sprint_pages = tg.create_task(self.sprint_db.get_all_pages())
 
+        if self.epics_db and not valid_epics.result():
+            raise Exception("Epic schema failed to validate")
         if not valid_milestones.result():
             raise Exception("Milestone schema failed to validate")
         if not valid_tasks.result():
@@ -171,8 +220,12 @@ class TrackerTwoWaySync(BaseSync):
         self._unlinked_notion_tasks = []
         self._merge_recent_notion_pages("task", self.tasks_db.database_id, changed_tasks.result())
         self._merge_recent_notion_pages("milestone", self.milestones_db.database_id, changed_milestones.result())
+        if self.epics_db:
+            self._merge_recent_notion_pages("epic", self.epics_db.database_id, changed_epics.result())
         self._remove_duplicate_cache_refs("task", self.tasks_db.database_id, self._notion_tasks_issues)
         self._remove_duplicate_cache_refs("milestone", self.milestones_db.database_id, self._notion_milestone_issues)
+        if self.epics_db:
+            self._remove_duplicate_cache_refs("epic", self.epics_db.database_id, self._notion_epic_issues)
 
         if self.sprint_db:
             self._all_sprint_pages = sprint_pages.result()
@@ -195,7 +248,10 @@ class TrackerTwoWaySync(BaseSync):
             "tracker_kind": self.tracker_kind,
             "tasks_database_id": self.tasks_db.database_id,
             "milestones_database_id": self.milestones_db.database_id,
+            "epics_database_id": self.epics_db.database_id if self.epics_db else None,
             "sprint_database_id": self.sprint_db.database_id if self.sprint_db else None,
+            "milestones_issue_type": self.milestones_issue_type,
+            "epics_issue_type": self.epics_issue_type,
             "team_ids": sorted(self.configured_team_ids),
             "repositories": sorted(self.tracker.get_all_repositories()),
             "properties": self.propnames,
@@ -208,10 +264,14 @@ class TrackerTwoWaySync(BaseSync):
             return
 
         self._notion_cache.reset(self._cache_fingerprint())
-        for entity_kind, database_id, refs in (
+        cache_sources = [
             ("task", self.tasks_db.database_id, self._notion_tasks_issues),
             ("milestone", self.milestones_db.database_id, self._notion_milestone_issues),
-        ):
+        ]
+        if self.epics_db:
+            cache_sources.append(("epic", self.epics_db.database_id, self._notion_epic_issues))
+
+        for entity_kind, database_id, refs in cache_sources:
             for repo, pages_by_issue in refs.items():
                 for issue_id, page in pages_by_issue.items():
                     issue_url = self._page_issue_url(page)
@@ -285,6 +345,35 @@ class TrackerTwoWaySync(BaseSync):
             tracker_issue.url,
         )
 
+    def _record_epic_cache_update(self, page, tracker_issue):
+        if not self.epics_db:
+            return
+        self._cache_upsert_page(
+            "epic",
+            self.epics_db.database_id,
+            page,
+            IssueRef(repo=tracker_issue.repo, id=tracker_issue.id),
+            tracker_issue.url,
+        )
+
+    def _refs_for_entity(self, entity_kind):
+        if entity_kind == "task":
+            return self._notion_tasks_issues
+        if entity_kind == "milestone":
+            return self._notion_milestone_issues
+        if entity_kind == "epic":
+            return self._notion_epic_issues
+        raise ValueError(f"Unknown entity kind {entity_kind}")
+
+    def _team_prop_key_for_entity(self, entity_kind):
+        if entity_kind == "task":
+            return "notion_tasks_team"
+        if entity_kind == "milestone":
+            return "notion_milestones_team"
+        if entity_kind == "epic":
+            return "notion_epics_team"
+        raise ValueError(f"Unknown entity kind {entity_kind}")
+
     def _merge_linked_page(self, entity_kind, database_id, refs, page):
         page_id = page["id"]
         self._drop_page_from_refs(refs, page_id)
@@ -317,7 +406,7 @@ class TrackerTwoWaySync(BaseSync):
         return True
 
     def _merge_recent_notion_pages(self, entity_kind, database_id, pages):
-        refs = self._notion_tasks_issues if entity_kind == "task" else self._notion_milestone_issues
+        refs = self._refs_for_entity(entity_kind)
         for page in pages:
             ref = self._merge_linked_page(entity_kind, database_id, refs, page)
             if entity_kind == "task" and ref is None and self._is_task_unlinked_create_candidate(page):
@@ -356,7 +445,7 @@ class TrackerTwoWaySync(BaseSync):
                 continue
 
             if team_prop and self.configured_team_ids:
-                prop_key = "notion_tasks_team" if entity_kind == "task" else "notion_milestones_team"
+                prop_key = self._team_prop_key_for_entity(entity_kind)
                 page_teams = set(self._get_relation_ids(page, prop_key))
                 if not page_teams.intersection(self.configured_team_ids):
                     continue
@@ -375,6 +464,14 @@ class TrackerTwoWaySync(BaseSync):
         ]
 
         return found_milestone_parents
+
+    def _find_milestone_epic_parent(self, tracker_issue):
+        if not self.epics_db:
+            return None
+        for parent in tracker_issue.parents:
+            if epic_parent := self._notion_epic_issues.get(parent.repo, {}).get(parent.id, None):
+                return epic_parent
+        return None
 
     def _page_timestamp(self, page):
         value = page.get("last_edited_time")
@@ -406,6 +503,107 @@ class TrackerTwoWaySync(BaseSync):
         if tracker_issue.parents:
             return False
         return bool(tracker_issue.sub_issues) or tracker_issue.title.startswith("[meta]")
+
+    def _is_epic_issue(self, tracker_issue):
+        epic_issue_type = self.epics_issue_type or getattr(self.tracker, "epics_issue_type", None)
+        return bool(epic_issue_type and tracker_issue.issue_type == epic_issue_type)
+
+    def _get_epic_notion_data_from_tracker(self, tracker_issue):
+        notion_data = {
+            self.propnames["notion_epics_title"]: tracker_issue.title,
+            self.propnames["notion_issue_field"]: tracker_issue.url,
+        }
+
+        assignees = [user.notion_user for user in tracker_issue.assignees if user.notion_user is not None]
+        self._set_if_prop(notion_data, "notion_epics_assignee", assignees or None)
+        self._set_if_prop(notion_data, "notion_epics_priority", tracker_issue.priority)
+
+        state = tracker_issue.state
+        if not state:
+            state = (
+                self.propnames["notion_closed_states"][0]
+                if tracker_issue.closed_date
+                else self.propnames["notion_default_open_state"]
+            )
+        self._set_if_prop(notion_data, "notion_epics_status", state)
+        self._set_if_date_prop(
+            notion_data,
+            "notion_epics_dates",
+            ensure_date(tracker_issue.start_date),
+            ensure_date(tracker_issue.end_date or tracker_issue.closed_date),
+        )
+
+        return notion_data
+
+    async def synchronize_single_epic_from_tracker(self, tracker_issue, page, candidate_debug=None):
+        """Apply tracker epic fields onto the linked Notion epic page."""
+        notion_data = self._get_epic_notion_data_from_tracker(tracker_issue)
+        changed = self.epics_db.page_diff(notion_data, page, log=False)
+        if changed:
+            self.logger.info(f"Updating epic (Tracker->Notion) {page.get('url')} - {tracker_issue.title}")
+            if candidate_debug:
+                self.logger.debug(f"  candidate: {candidate_debug}")
+            self.logger.debug("  notion changes:")
+            self.epics_db.page_diff(notion_data, page, log=self.logger.isEnabledFor(logging.DEBUG))
+            self.logger.debug("\t" + str(notion_data))
+            await self.epics_db.update_page(page, notion_data, diff_log=False)
+            self._record_epic_cache_update(page, tracker_issue)
+        else:
+            self.logger.info(f"Unchanged epic {tracker_issue.repo}#{tracker_issue.id} - {tracker_issue.title}")
+        return changed
+
+    def _get_epic_tracker_issue_from_notion(self, tracker_issue, page):
+        community_assignees = {assignee for assignee in tracker_issue.assignees if assignee.notion_user is None}
+        epic_assignees = {
+            self.tracker.new_user(notion_user=assignee["id"])
+            for assignee in self._get_prop(page, "notion_epics_assignee", [])
+        }
+
+        title = self._get_richtext_prop(page, "notion_epics_title", "")
+        labels = set(tracker_issue.labels)
+        if self.epics_extra_label:
+            labels.add(self.epics_extra_label)
+
+        start_date, end_date = self._get_date_prop(page, "notion_epics_dates")
+
+        return dataclasses.replace(
+            tracker_issue,
+            title=self.epics_tracker_prefix + title,
+            labels=labels,
+            state=(self._get_prop(page, "notion_epics_status") or {}).get("name"),
+            priority=(self._get_prop(page, "notion_epics_priority") or {}).get("name"),
+            assignees=community_assignees.union(epic_assignees),
+            notion_url=page.get("url", ""),
+            start_date=ensure_date(start_date) if start_date else None,
+            end_date=ensure_date(end_date) if end_date else None,
+            issue_type=self.epics_issue_type or tracker_issue.issue_type,
+        )
+
+    async def synchronize_single_epic(self, tracker_issue, page, skip_unchanged_msg=False, candidate_debug=None):
+        """Apply Notion epic fields onto the linked tracker epic issue."""
+        old_issue_url = self._get_prop(page, "notion_issue_field")
+        if old_issue_url and old_issue_url != tracker_issue.url:
+            self.logger.warning(
+                f"Epic URL changed for {tracker_issue.repo}#{tracker_issue.id}: {old_issue_url} -> {tracker_issue.url}"
+            )
+
+        new_issue = self._get_epic_tracker_issue_from_notion(tracker_issue, page)
+        needs_update = self.tracker.should_update_milestone_issue(tracker_issue, new_issue)
+
+        if needs_update:
+            self.logger.info(f"Updating epic (Notion->Tracker) {tracker_issue.url} - {new_issue.title}")
+            if candidate_debug:
+                self.logger.debug(f"  candidate: {candidate_debug}")
+            diff_dataclasses(tracker_issue, new_issue, log=self.logger.debug)
+
+            if not self.dry:
+                await self.tracker.update_milestone_issue(tracker_issue, new_issue)
+            return True
+        elif not skip_unchanged_msg:
+            self.logger.info(
+                f"Unchanged epic {tracker_issue.id} - {tracker_issue.title} ({tracker_issue.url} / {new_issue.notion_url})"
+            )
+        return False
 
     def _pick_direction(self, entity_kind, tracker_issue, notion_page, tracker_to_notion, notion_to_tracker):
         if tracker_to_notion and not notion_to_tracker:
@@ -459,8 +657,32 @@ class TrackerTwoWaySync(BaseSync):
             ensure_date(tracker_issue.start_date),
             ensure_date(tracker_issue.end_date or tracker_issue.closed_date),
         )
+        if self.epics_db and self.propnames.get("notion_milestones_epic_relation"):
+            epic_parent = self._find_milestone_epic_parent(tracker_issue)
+            self._set_if_prop(
+                notion_data,
+                "notion_milestones_epic_relation",
+                [epic_parent["id"]] if epic_parent else [],
+            )
 
         return notion_data
+
+    async def _sync_milestone_epic_relation_from_tracker(self, tracker_issue, page):
+        if not self.epics_db or not self.propnames.get("notion_milestones_epic_relation"):
+            return False
+
+        epic_parent = self._find_milestone_epic_parent(tracker_issue)
+        relation_data = {self.propnames["notion_milestones_epic_relation"]: [epic_parent["id"]] if epic_parent else []}
+        changed = self.milestones_db.page_diff(relation_data, page, log=False)
+        if changed:
+            self.logger.info(
+                f"Updating milestone epic relation (Tracker->Notion) {page.get('url')} - {tracker_issue.title}"
+            )
+            self.milestones_db.page_diff(relation_data, page, log=self.logger.isEnabledFor(logging.DEBUG))
+            self.logger.debug(relation_data)
+            await self.milestones_db.update_page(page, relation_data, diff_log=False)
+            self._record_milestone_cache_update(page, tracker_issue)
+        return changed
 
     async def synchronize_single_milestone_from_tracker(self, tracker_issue, page, candidate_debug=None):
         """Apply tracker milestone fields onto the linked Notion milestone page."""
@@ -522,6 +744,7 @@ class TrackerTwoWaySync(BaseSync):
         if self.milestones_issue_type:
             new_issue.issue_type = self.milestones_issue_type
 
+        await self._sync_milestone_epic_relation_from_tracker(tracker_issue, page)
         needs_update = self.tracker.should_update_milestone_issue(tracker_issue, new_issue)
 
         if needs_update:
@@ -791,6 +1014,14 @@ class TrackerTwoWaySync(BaseSync):
             self._record_milestone_cache_update(page, tracker_issue)
         return page
 
+    async def _create_epic_in_notion_from_tracker(self, tracker_issue):
+        notion_data = self._get_epic_notion_data_from_tracker(tracker_issue)
+        self._set_if_prop(notion_data, "notion_epics_team", self.configured_team_ids or None)
+        page = await self.epics_db.create_page(notion_data)
+        if page:
+            self._record_epic_cache_update(page, tracker_issue)
+        return page
+
     async def _link_task_page_to_issue(self, page, tracker_issue):
         notion_data = {
             self.propnames["notion_issue_field"]: [
@@ -822,15 +1053,39 @@ class TrackerTwoWaySync(BaseSync):
 
         return milestones
 
+    async def _get_tracker_epics_for_create(self, since):
+        epics = {}
+
+        if not self.epics_db:
+            return epics
+
+        if self.epics_issue_type:
+            async for epic in self.tracker.collect_tracker_epics(self.epics_issue_type, sub_issues=True):
+                if not self.full_sync and epic.updated_date and epic.updated_date < since:
+                    continue
+                epics[(epic.repo, epic.id)] = epic
+            return epics
+
+        recent = await self.tracker.get_recent_issues_by_repo(since, sub_issues=False)
+        for repo, issues in recent.items():
+            for issue_id, issue in issues.items():
+                if self._is_epic_issue(issue):
+                    epics[(repo, issue_id)] = issue
+
+        return epics
+
     def _new_stats(self):
         return {
             "tasks_updated_from_tracker": 0,
             "tasks_updated_from_notion": 0,
             "milestones_updated_from_tracker": 0,
             "milestones_updated_from_notion": 0,
+            "epics_updated_from_tracker": 0,
+            "epics_updated_from_notion": 0,
             "tasks_created_from_tracker": 0,
             "tasks_created_from_notion": 0,
             "milestones_created_from_tracker": 0,
+            "epics_created_from_tracker": 0,
             "tasks_create_skipped_no_parent": 0,
             "tasks_create_skipped_closed": 0,
             "tasks_create_skipped_unsupported_path": 0,
@@ -838,10 +1093,20 @@ class TrackerTwoWaySync(BaseSync):
             "milestones_create_skipped_unsupported_path": 1
             if self._milestones_notion_to_tracker_create_unsupported
             else 0,
+            "epics_create_skipped_unsupported_path": 1 if self._epics_notion_to_tracker_create_unsupported else 0,
         }
 
     async def _add_tracker_create_candidates(
-        self, since, recent_tasks_by_repo, notion_task_refs, notion_milestone_refs, task_issues, milestone_issues
+        self,
+        since,
+        recent_tasks_by_repo,
+        recent_epics_by_repo,
+        notion_task_refs,
+        notion_milestone_refs,
+        notion_epic_refs,
+        task_issues,
+        milestone_issues,
+        epic_issues,
     ):
         if self.tasks_tracker_to_notion and self.tasks_tracker_to_notion_create:
             for repo, issues in recent_tasks_by_repo.items():
@@ -868,6 +1133,24 @@ class TrackerTwoWaySync(BaseSync):
                 self.logger.info(
                     "Skipping %d tracker->Notion milestone create candidates because milestones_tracker_to_notion_create is disabled",
                     len(skipped_milestones),
+                )
+
+        if self.epics_db and self.epics_tracker_to_notion and self.epics_tracker_to_notion_create:
+            for key, issue in (await self._get_tracker_epics_for_create(since)).items():
+                if key in notion_epic_refs:
+                    continue
+                epic_issues[key] = issue
+        elif self.epics_db and self.epics_tracker_to_notion:
+            skipped_epics = [
+                (repo, issue_id)
+                for repo, issues in recent_epics_by_repo.items()
+                for issue_id in issues
+                if (repo, issue_id) not in notion_epic_refs
+            ]
+            if skipped_epics:
+                self.logger.info(
+                    "Skipping %d tracker->Notion epic create candidates because epics_tracker_to_notion_create is disabled",
+                    len(skipped_epics),
                 )
 
     def _candidate_debug(self, entity_kind, issue, page, tracker_to_notion, notion_to_tracker):
@@ -912,6 +1195,59 @@ class TrackerTwoWaySync(BaseSync):
             f"- {action} - {reason}"
         )
         return direction, debug
+
+    async def _run_epic_phase(self, epic_issues, notion_epic_refs, stats):
+        if not self.epics_db:
+            return
+
+        stat_tasks = []
+        async with asyncio.TaskGroup() as tg:
+            for key, issue in epic_issues.items():
+                page = notion_epic_refs.get(key)
+                if page is None:
+                    if self.epics_tracker_to_notion and self.epics_tracker_to_notion_create:
+                        if self._is_epic_issue(issue):
+                            if issue.closed_date or self._is_closed_status(issue.state):
+                                stats["epics_create_skipped_unsupported_path"] += 1
+                                continue
+                            page = await self._create_epic_in_notion_from_tracker(issue)
+                            if not page:
+                                continue
+                            notion_epic_refs[key] = page
+                            self._notion_epic_issues.setdefault(issue.repo, {})[issue.id] = page
+                            stats["epics_created_from_tracker"] += 1
+                            if "properties" in page:
+                                await self.synchronize_single_epic_from_tracker(issue, page)
+                        else:
+                            stats["epics_create_skipped_unsupported_path"] += 1
+                    continue
+
+                direction, candidate_debug = self._candidate_debug(
+                    "epic",
+                    issue,
+                    page,
+                    self.epics_tracker_to_notion,
+                    self.epics_notion_to_tracker,
+                )
+
+                if direction == "tracker_to_notion":
+                    stat_tasks.append(
+                        (
+                            "epics_updated_from_tracker",
+                            tg.create_task(self.synchronize_single_epic_from_tracker(issue, page, candidate_debug)),
+                        )
+                    )
+                elif direction == "notion_to_tracker":
+                    stat_tasks.append(
+                        (
+                            "epics_updated_from_notion",
+                            tg.create_task(self.synchronize_single_epic(issue, page, candidate_debug=candidate_debug)),
+                        )
+                    )
+
+        for stat_key, task in stat_tasks:
+            if task.result():
+                stats[stat_key] += 1
 
     async def _run_milestone_phase(self, milestone_issues, notion_milestone_refs, milestone_page_by_id, stats):
         stat_tasks = []
@@ -1111,42 +1447,57 @@ class TrackerTwoWaySync(BaseSync):
             if task.result():
                 stats[stat_key] += 1
 
-    def _log_sync_stats(self, task_linked_count, milestone_linked_count, task_skipped, milestone_skipped, stats):
-        self.logger.info("Two-way sync stats %-22s %8s %10s", "", "tasks", "milestones")
+    def _log_sync_stats(
+        self,
+        task_linked_count,
+        milestone_linked_count,
+        epic_linked_count,
+        task_skipped,
+        milestone_skipped,
+        epic_skipped,
+        stats,
+    ):
+        self.logger.info("Two-way sync stats %-22s %8s %10s %10s", "", "tasks", "milestones", "epics")
         self.logger.info(
-            "Two-way sync stats %-22s %8d %10d",
+            "Two-way sync stats %-22s %8d %10d %10d",
             "linked",
             task_linked_count,
             milestone_linked_count,
+            epic_linked_count,
         )
         self.logger.info(
-            "Two-way sync stats %-22s %8d %10d",
+            "Two-way sync stats %-22s %8d %10d %10d",
             "skipped",
             task_skipped,
             milestone_skipped,
+            epic_skipped,
         )
         self.logger.info(
-            "Two-way sync stats %-22s %8d %10d",
+            "Two-way sync stats %-22s %8d %10d %10d",
             "updated from tracker",
             stats["tasks_updated_from_tracker"],
             stats["milestones_updated_from_tracker"],
+            stats["epics_updated_from_tracker"],
         )
         self.logger.info(
-            "Two-way sync stats %-22s %8d %10d",
+            "Two-way sync stats %-22s %8d %10d %10d",
             "updated from notion",
             stats["tasks_updated_from_notion"],
             stats["milestones_updated_from_notion"],
+            stats["epics_updated_from_notion"],
         )
         self.logger.info(
-            "Two-way sync stats %-22s %8d %10d",
+            "Two-way sync stats %-22s %8d %10d %10d",
             "created from tracker",
             stats["tasks_created_from_tracker"],
             stats["milestones_created_from_tracker"],
+            stats["epics_created_from_tracker"],
         )
         self.logger.info(
-            "Two-way sync stats %-22s %8d %10s",
+            "Two-way sync stats %-22s %8d %10s %10s",
             "created from notion",
             stats["tasks_created_from_notion"],
+            "-",
             "-",
         )
         self.logger.info(
@@ -1154,6 +1505,10 @@ class TrackerTwoWaySync(BaseSync):
             stats["tasks_create_skipped_no_parent"],
             stats["tasks_create_skipped_unsupported_path"],
             stats["tasks_create_link_back_retry"],
+        )
+        self.logger.info(
+            "Two-way sync stats epic create skipped unsupported=%5d",
+            stats["epics_create_skipped_unsupported_path"],
         )
 
     async def synchronize(self):
@@ -1181,24 +1536,40 @@ class TrackerTwoWaySync(BaseSync):
             self.milestones_tracker_to_notion_create,
             self.milestones_notion_to_tracker_create,
         )
+        self.logger.debug(
+            "Two-way sync directions epics tracker->notion=%s notion->tracker=%s create tracker->notion=%s notion->tracker=%s",
+            self.epics_tracker_to_notion,
+            self.epics_notion_to_tracker,
+            self.epics_tracker_to_notion_create,
+            self.epics_notion_to_tracker_create,
+        )
 
         await self._async_init()
 
         recent_tasks_by_repo = {}
         recent_milestones_by_repo = {}
+        recent_epics_by_repo = {}
         fetch_recent = (
             self.tasks_tracker_to_notion
             or self.tasks_notion_to_tracker
             or self.milestones_tracker_to_notion
             or self.milestones_notion_to_tracker
+            or (self.epics_db and self.epics_tracker_to_notion)
+            or (self.epics_db and self.epics_notion_to_tracker)
             or self.tasks_tracker_to_notion_create
             or self.milestones_tracker_to_notion_create
+            or (self.epics_db and self.epics_tracker_to_notion_create)
         )
         if fetch_recent:
             fetch_since = since if not self.full_sync else datetime.datetime(1970, 1, 1, tzinfo=datetime.UTC)
             recent_issues_by_repo = await self.tracker.get_recent_issues_by_repo(fetch_since, sub_issues=False)
             recent_tasks_by_repo = self._filter_task_issues_by_repo(recent_issues_by_repo)
             recent_milestones_by_repo = recent_issues_by_repo
+            if self.epics_db:
+                recent_epics_by_repo = {
+                    repo: {issue_id: issue for issue_id, issue in issues.items() if self._is_epic_issue(issue)}
+                    for repo, issues in recent_issues_by_repo.items()
+                }
         else:
             self.logger.info(
                 "Two-way sync not fetching recent tracker issues because all tracker directions are disabled"
@@ -1214,20 +1585,31 @@ class TrackerTwoWaySync(BaseSync):
             for repo, issues in self._notion_milestone_issues.items()
             for issue_id, page in issues.items()
         }
+        notion_epic_refs = {
+            (repo, issue_id): page
+            for repo, issues in self._notion_epic_issues.items()
+            for issue_id, page in issues.items()
+        }
 
         recent_task_keys = {(repo, issue_id) for repo, issues in recent_tasks_by_repo.items() for issue_id in issues}
         recent_milestone_keys = {
             (repo, issue_id) for repo, issues in recent_milestones_by_repo.items() for issue_id in issues
         }
+        recent_epic_keys = {(repo, issue_id) for repo, issues in recent_epics_by_repo.items() for issue_id in issues}
         recent_tracker_task_count = sum(
             1 for issues in recent_tasks_by_repo.values() for issue in issues.values() if self._is_task_issue(issue)
         )
+        recent_tracker_epic_count = sum(
+            1 for issues in recent_epics_by_repo.values() for issue in issues.values() if self._is_epic_issue(issue)
+        )
         self.logger.info(
-            "Two-way sync discovered linked Notion refs tasks=%d milestones=%d recent_tracker_refs=%d recent_tracker_tasks=%d",
+            "Two-way sync discovered linked Notion refs tasks=%d milestones=%d epics=%d recent_tracker_refs=%d recent_tracker_tasks=%d recent_tracker_epics=%d",
             len(notion_task_refs),
             len(notion_milestone_refs),
+            len(notion_epic_refs),
             len(recent_task_keys),
             recent_tracker_task_count,
+            recent_tracker_epic_count,
         )
 
         task_candidates, task_linked_count, task_skipped = self._collect_candidates(
@@ -1236,20 +1618,30 @@ class TrackerTwoWaySync(BaseSync):
         milestone_candidates, milestone_linked_count, milestone_skipped = self._collect_candidates(
             notion_milestone_refs, recent_milestone_keys, since
         )
+        epic_candidates, epic_linked_count, epic_skipped = self._collect_candidates(
+            notion_epic_refs, recent_epic_keys, since
+        )
         task_candidates = await self._refresh_cached_candidate_pages(
             "task", self.tasks_db.database_id, notion_task_refs, task_candidates
         )
         milestone_candidates = await self._refresh_cached_candidate_pages(
             "milestone", self.milestones_db.database_id, notion_milestone_refs, milestone_candidates
         )
+        if self.epics_db:
+            epic_candidates = await self._refresh_cached_candidate_pages(
+                "epic", self.epics_db.database_id, notion_epic_refs, epic_candidates
+            )
 
         task_issues = await self._load_tracker_candidates(task_candidates, recent_tasks_by_repo)
         task_issues = self._filter_task_issues(task_issues)
         milestone_issues = await self._load_tracker_candidates(milestone_candidates, recent_milestones_by_repo)
+        epic_issues = await self._load_tracker_candidates(epic_candidates, recent_epics_by_repo)
+        epic_issues = {key: issue for key, issue in epic_issues.items() if self._is_epic_issue(issue)}
         self.logger.info(
-            "Two-way sync loaded tracker candidates tasks=%d milestones=%d",
+            "Two-way sync loaded tracker candidates tasks=%d milestones=%d epics=%d",
             len(task_issues),
             len(milestone_issues),
+            len(epic_issues),
         )
 
         stats = self._new_stats()
@@ -1260,12 +1652,31 @@ class TrackerTwoWaySync(BaseSync):
         }
 
         await self._add_tracker_create_candidates(
-            since, recent_tasks_by_repo, notion_task_refs, notion_milestone_refs, task_issues, milestone_issues
+            since,
+            recent_tasks_by_repo,
+            recent_epics_by_repo,
+            notion_task_refs,
+            notion_milestone_refs,
+            notion_epic_refs,
+            task_issues,
+            milestone_issues,
+            epic_issues,
         )
+        await self._run_epic_phase(epic_issues, notion_epic_refs, stats)
         await self._run_milestone_phase(milestone_issues, notion_milestone_refs, milestone_page_by_id, stats)
         await self._run_task_phase(since, task_issues, notion_task_refs, milestone_page_by_id, milestone_issues, stats)
-        self._log_sync_stats(task_linked_count, milestone_linked_count, task_skipped, milestone_skipped, stats)
+        self._log_sync_stats(
+            task_linked_count,
+            milestone_linked_count,
+            epic_linked_count,
+            task_skipped,
+            milestone_skipped,
+            epic_skipped,
+            stats,
+        )
         async with asyncio.TaskGroup() as tg:
+            if self.epics_db:
+                tg.create_task(self._update_timestamp(self.epics_db, timestamp))
             tg.create_task(self._update_timestamp(self.milestones_db, timestamp))
             tg.create_task(self._update_timestamp(self.tasks_db, timestamp))
 
