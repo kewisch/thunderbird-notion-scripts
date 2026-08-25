@@ -269,7 +269,6 @@ async def cmd_synchronize(
                 sprint_id=project.get("notion_sprints_id", None),
                 milestones_body_sync=project.get("milestones_body_sync", False),
                 milestones_body_sync_if_empty=project.get("milestones_body_sync_if_empty", False),
-                milestones_create_from_tracker=False,
                 tasks_body_sync=project.get("tasks_body_sync", False),
                 epics_tracker_prefix=project.get("epics_tracker_prefix", ""),
                 epics_extra_label=project.get("epics_extra_label", ""),

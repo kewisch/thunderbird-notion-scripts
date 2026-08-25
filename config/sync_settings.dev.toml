@@ -22,7 +22,6 @@ notion_associated_team = ["2332df5d45ae8083af1dcda07b5c1eca", "31a2df5d45ae80d38
 
 milestones_body_sync = false
 milestones_body_sync_if_empty = true
-milestones_create_from_tracker = true
 tasks_body_sync = false
 milestones_issue_type = "Milestone"
 
@@ -119,7 +118,6 @@ notion_associated_team = ["2332df5d45ae8083af1dcda07b5c1eca", "31a2df5d45ae80d38
 
 milestones_body_sync = false
 milestones_body_sync_if_empty = true
-milestones_create_from_tracker = true
 tasks_body_sync = false
 milestones_issue_type = "Milestone"
 
@@ -211,7 +209,6 @@ milestones_notion_to_tracker = true
 
 milestones_tracker_to_notion_create = true
 milestones_notion_to_tracker_create = false # changed
-milestones_create_from_tracker = true # TODO remove?
 
 # Epics
 epics_issue_type = "Epic"

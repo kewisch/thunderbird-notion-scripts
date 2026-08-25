@@ -35,10 +35,8 @@ class BaseSync:
         tasks_id,
         epics_id=None,
         sprint_id=None,
-        epics_create_from_tracker=False,
         milestones_body_sync=False,
         milestones_body_sync_if_empty=False,
-        milestones_create_from_tracker=False,
         tasks_body_sync=False,
         epics_tracker_prefix="",
         epics_extra_label="",
@@ -70,10 +68,6 @@ class BaseSync:
             milestones_body_sync_if_empty (bool): If true, the Notion page body will be synchronized
                 to the tracker, but only if the tracker issue is empty. This works great for a one
                 time import.
-            epics_create_from_tracker (bool): If true, tracker issues with the epic type
-                will be created in Notion if they do not exist.
-            milestones_create_from_tracker (bool): If true, tracker issues with the milestone type
-                will be created in Notion if they do not exist.
             tasks_body_sync (bool): If true, the issue body will be synced to Notion tasks.
                 Note this takes a lot of requests, so recommend avoiding.
             epics_tracker_prefix (str): Optional prefix on the issue tracker when synchronized
@@ -103,7 +97,6 @@ class BaseSync:
         # Epics Database (optional, enabled when epics_id is set)
         self.epics_db = None
         self.epics_enabled = bool(epics_id)
-        self.epics_create_from_tracker = epics_create_from_tracker
         self.epics_tracker_prefix = epics_tracker_prefix
         self.epics_extra_label = epics_extra_label
         self.epics_issue_type = epics_issue_type
@@ -137,7 +130,6 @@ class BaseSync:
 
         self.milestones_db = NotionDatabase(milestones_id, self.notion, milestones_properties, dry=dry)
         self.milestones_body_sync = milestones_body_sync
-        self.milestones_create_from_tracker = milestones_create_from_tracker
         self.milestones_body_sync_if_empty = milestones_body_sync_if_empty
         self.milestones_tracker_prefix = milestones_tracker_prefix
         self.milestones_extra_label = milestones_extra_label

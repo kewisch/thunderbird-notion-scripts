@@ -23,6 +23,18 @@ class ProjectSync(BaseSync):
     high level in Notion. See README.md for more info.
     """
 
+    def __init__(
+        self,
+        *args,
+        epics_create_from_tracker=False,
+        milestones_create_from_tracker=False,
+        **kwargs,
+    ):
+        """Set up project-sync-specific tracker creation settings."""
+        super().__init__(*args, **kwargs)
+        self.epics_create_from_tracker = epics_create_from_tracker
+        self.milestones_create_from_tracker = milestones_create_from_tracker
+
     async def _async_init(self):
         async with asyncio.TaskGroup() as tg:
             tg.create_task(super()._async_init())
