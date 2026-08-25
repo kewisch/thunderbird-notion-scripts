@@ -112,6 +112,7 @@ class TwoWayTestTracker(IssueTracker):
 class TwoWaySyncTest(BaseTestCase):
     async def _run_sync(self, tracker, **kwargs):
         dry = kwargs.pop("dry", False)
+        kwargs.setdefault("incremental_lookback_seconds", 604800)
         sync = TrackerTwoWaySync(
             project_key="twoway",
             tracker=tracker,
@@ -172,7 +173,7 @@ class TwoWaySyncTest(BaseTestCase):
             recent_ids=[],
         )
 
-        await self._run_sync(tracker, full_sync=False, incremental_lookback_seconds=604800)
+        await self._run_sync(tracker, incremental_lookback_seconds=604800)
         self.assertEqual(len(tracker.updated_milestones), 0)
         self.assertEqual(len(tracker.updated_tasks), 0)
         self.assertEqual(self.respx.routes["pages_update"].calls.call_count, 0)
@@ -194,7 +195,6 @@ class TwoWaySyncTest(BaseTestCase):
             )
             await self._run_sync(
                 tracker,
-                full_sync=False,
                 incremental_lookback_seconds=lookback,
                 tasks_tracker_to_notion=True,
                 tasks_notion_to_tracker=False,
@@ -236,7 +236,7 @@ class TwoWaySyncTest(BaseTestCase):
             )
             await self._run_sync(
                 tracker,
-                full_sync=True,
+                incremental_lookback_seconds=None,
                 twoway_cache_enabled=True,
                 twoway_cache_path=cache_path,
             )
@@ -256,7 +256,7 @@ class TwoWaySyncTest(BaseTestCase):
             )
             await self._run_sync(
                 tracker,
-                full_sync=False,
+                incremental_lookback_seconds=604800,
                 twoway_cache_enabled=True,
                 twoway_cache_path=cache_path,
                 tasks_tracker_to_notion=True,
@@ -295,7 +295,7 @@ class TwoWaySyncTest(BaseTestCase):
             )
             await self._run_sync(
                 tracker,
-                full_sync=True,
+                incremental_lookback_seconds=None,
                 dry=True,
                 twoway_cache_enabled=True,
                 twoway_cache_path=cache_path,
@@ -327,7 +327,7 @@ class TwoWaySyncTest(BaseTestCase):
             )
             await self._run_sync(
                 tracker,
-                full_sync=False,
+                incremental_lookback_seconds=604800,
                 dry=True,
                 twoway_cache_enabled=True,
                 twoway_cache_path=cache_path,
@@ -362,7 +362,7 @@ class TwoWaySyncTest(BaseTestCase):
             epics_tracker_to_notion=False,
             tasks_tracker_to_notion=False,
             milestones_notion_to_tracker=False,
-            full_sync=True,
+            incremental_lookback_seconds=None,
         )
 
         self.assertEqual(len(tracker.updated_milestones), 1)
@@ -391,7 +391,7 @@ class TwoWaySyncTest(BaseTestCase):
             epics_notion_to_tracker=False,
             tasks_tracker_to_notion=False,
             milestones_notion_to_tracker=False,
-            full_sync=False,
+            incremental_lookback_seconds=604800,
         )
 
         epic_updates = [
@@ -425,7 +425,7 @@ class TwoWaySyncTest(BaseTestCase):
                 epics_notion_to_tracker=False,
                 tasks_tracker_to_notion=False,
                 milestones_notion_to_tracker=False,
-                full_sync=True,
+                incremental_lookback_seconds=None,
             )
 
         epic_creates = [
@@ -462,7 +462,7 @@ class TwoWaySyncTest(BaseTestCase):
             tasks_tracker_to_notion=False,
             epics_tracker_to_notion=False,
             epics_notion_to_tracker=False,
-            full_sync=False,
+            incremental_lookback_seconds=604800,
         )
 
         milestone_updates = [
@@ -494,7 +494,7 @@ class TwoWaySyncTest(BaseTestCase):
             await self._run_sync(
                 tracker,
                 epics_id="epics_id",
-                full_sync=True,
+                incremental_lookback_seconds=None,
                 twoway_cache_enabled=True,
                 twoway_cache_path=cache_path,
             )
@@ -515,7 +515,7 @@ class TwoWaySyncTest(BaseTestCase):
             await self._run_sync(
                 tracker,
                 epics_id="epics_id",
-                full_sync=False,
+                incremental_lookback_seconds=604800,
                 twoway_cache_enabled=True,
                 twoway_cache_path=cache_path,
                 epics_tracker_to_notion=True,
@@ -543,7 +543,7 @@ class TwoWaySyncTest(BaseTestCase):
                 epics_tracker_to_notion=False,
                 tasks_tracker_to_notion=False,
                 milestones_notion_to_tracker=False,
-                full_sync=False,
+                incremental_lookback_seconds=604800,
             )
 
         self.assertEqual(tracker.updated_milestones, [])
@@ -563,7 +563,7 @@ class TwoWaySyncTest(BaseTestCase):
             recent_ids=[],
         )
 
-        await self._run_sync(tracker, full_sync=True)
+        await self._run_sync(tracker, incremental_lookback_seconds=None)
         self.assertGreaterEqual(len(tracker.updated_milestones), 1)
         self.assertEqual(len(tracker.updated_tasks), 0)
 
@@ -583,7 +583,7 @@ class TwoWaySyncTest(BaseTestCase):
             tasks_notion_to_tracker=True,
             milestones_tracker_to_notion=True,
             milestones_notion_to_tracker=True,
-            full_sync=False,
+            incremental_lookback_seconds=604800,
         )
 
         # Tie fallback: tracker for tasks, notion for milestones
@@ -748,7 +748,7 @@ class TwoWaySyncTest(BaseTestCase):
             tasks_tracker_to_notion=True,
             tasks_notion_to_tracker=True,
             tasks_conflict_preference="notion",
-            full_sync=False,
+            incremental_lookback_seconds=604800,
         )
 
         task_updates = [
@@ -784,7 +784,7 @@ class TwoWaySyncTest(BaseTestCase):
             tasks_tracker_to_notion=True,
             tasks_tracker_to_notion_create=True,
             tasks_notion_to_tracker=False,
-            full_sync=False,
+            incremental_lookback_seconds=604800,
         )
 
         self.assertEqual(self.respx.routes["pages_create"].calls.call_count, 1)
@@ -809,7 +809,7 @@ class TwoWaySyncTest(BaseTestCase):
                 tasks_tracker_to_notion=True,
                 tasks_tracker_to_notion_create=True,
                 tasks_notion_to_tracker=False,
-                full_sync=False,
+                incremental_lookback_seconds=604800,
             )
 
         self.assertEqual(self.respx.routes["pages_create"].calls.call_count, 0)
@@ -836,7 +836,7 @@ class TwoWaySyncTest(BaseTestCase):
             milestones_issue_type="Milestone",
             milestones_tracker_to_notion=True,
             milestones_tracker_to_notion_create=False,
-            full_sync=False,
+            incremental_lookback_seconds=604800,
         )
 
         self.assertEqual(self.respx.routes["pages_create"].calls.call_count, 0)
@@ -863,7 +863,7 @@ class TwoWaySyncTest(BaseTestCase):
                 milestones_issue_type="Milestone",
                 milestones_tracker_to_notion=True,
                 milestones_tracker_to_notion_create=False,
-                full_sync=False,
+                incremental_lookback_seconds=604800,
             )
 
         self.assertEqual(self.respx.routes["pages_create"].calls.call_count, 0)
@@ -892,7 +892,7 @@ class TwoWaySyncTest(BaseTestCase):
                 tasks_tracker_to_notion_create=True,
                 milestones_issue_type="Milestone",
                 epics_issue_type="Epic",
-                full_sync=False,
+                incremental_lookback_seconds=604800,
             )
 
         self.assertEqual(self.respx.routes["pages_create"].calls.call_count, 0)
@@ -921,7 +921,7 @@ class TwoWaySyncTest(BaseTestCase):
                 tasks_tracker_to_notion_create=True,
                 milestones_issue_type="Milestone",
                 epics_issue_type="Epic",
-                full_sync=False,
+                incremental_lookback_seconds=604800,
             )
 
         self.assertEqual(self.respx.routes["pages_create"].calls.call_count, 1)
@@ -947,7 +947,7 @@ class TwoWaySyncTest(BaseTestCase):
             milestones_tracker_to_notion_create=True,
             milestones_notion_to_tracker=False,
             tasks_tracker_to_notion=False,
-            full_sync=False,
+            incremental_lookback_seconds=604800,
         )
 
         self.assertEqual(self.respx.routes["pages_create"].calls.call_count, 1)
@@ -975,7 +975,7 @@ class TwoWaySyncTest(BaseTestCase):
                 milestones_notion_to_tracker=False,
                 tasks_tracker_to_notion=True,
                 tasks_tracker_to_notion_create=True,
-                full_sync=False,
+                incremental_lookback_seconds=604800,
             )
 
         self.assertEqual(self.respx.routes["pages_create"].calls.call_count, 1)
@@ -1001,7 +1001,7 @@ class TwoWaySyncTest(BaseTestCase):
                 milestones_tracker_to_notion_create=True,
                 milestones_notion_to_tracker=False,
                 tasks_tracker_to_notion=False,
-                full_sync=False,
+                incremental_lookback_seconds=604800,
                 dry=True,
                 twoway_cache_enabled=True,
                 twoway_cache_path=cache_path,
@@ -1073,7 +1073,7 @@ class TwoWaySyncTest(BaseTestCase):
                 tasks_tracker_to_notion=False,
                 tasks_notion_to_tracker=True,
                 tasks_notion_to_tracker_create=True,
-                full_sync=True,
+                incremental_lookback_seconds=None,
                 dry=True,
                 twoway_cache_enabled=True,
                 twoway_cache_path=cache_path,
@@ -1110,7 +1110,7 @@ class TwoWaySyncTest(BaseTestCase):
             milestones_tracker_to_notion_create=True,
             milestones_notion_to_tracker=False,
             tasks_tracker_to_notion=False,
-            full_sync=False,
+            incremental_lookback_seconds=604800,
             dry=True,
         )
 
@@ -1170,7 +1170,7 @@ class TwoWaySyncTest(BaseTestCase):
             tasks_tracker_to_notion=False,
             tasks_notion_to_tracker=True,
             tasks_notion_to_tracker_create=True,
-            full_sync=True,
+            incremental_lookback_seconds=None,
         )
 
         self.assertEqual(len(tracker.created_tasks), 1)
@@ -1193,7 +1193,7 @@ class TwoWaySyncTest(BaseTestCase):
             tracker,
             milestones_notion_to_tracker=True,
             milestones_notion_to_tracker_create=True,
-            full_sync=True,
+            incremental_lookback_seconds=None,
         )
 
         # still only the normal milestone update behavior, no create attempts

@@ -27,7 +27,7 @@ class TrackerTwoWaySync(BaseSync):
 
     def __init__(
         self,
-        incremental_lookback_seconds=7 * 24 * 60 * 60,
+        incremental_lookback_seconds=None,
         tasks_tracker_to_notion=True,
         tasks_notion_to_tracker=False,
         milestones_tracker_to_notion=False,
@@ -46,7 +46,6 @@ class TrackerTwoWaySync(BaseSync):
         tracker_kind=None,
         twoway_cache_enabled=False,
         twoway_cache_path=".cache/mzla-notion/twoway.sqlite3",
-        full_sync=False,
         **kwargs,
     ):
         """Initialize two-way sync configuration and directional behavior."""
@@ -74,7 +73,7 @@ class TrackerTwoWaySync(BaseSync):
         self.twoway_cache_path = twoway_cache_path
         self._notion_cache = None
         self._using_notion_cache = False
-        self.full_sync = full_sync
+        self.full_sync = incremental_lookback_seconds is None
         self._task_create_cache = {}
         self._unlinked_notion_tasks = []
         self._task_discovery_since = None
@@ -1514,16 +1513,19 @@ class TrackerTwoWaySync(BaseSync):
         )
 
     async def synchronize(self):
-        """Run a complete incremental two-way synchronization cycle."""
+        """Run a complete two-way synchronization cycle."""
         timestamp = datetime.datetime.now(datetime.UTC)
-        since = timestamp - datetime.timedelta(seconds=self.incremental_lookback_seconds)
+        if self.full_sync:
+            since = None
+            self.logger.info("Two-way sync window full_sync=True")
+        else:
+            since = timestamp - datetime.timedelta(seconds=self.incremental_lookback_seconds)
+            self.logger.info(
+                "Two-way sync window full_sync=False lookback_seconds=%d since=%s",
+                self.incremental_lookback_seconds,
+                self._format_timestamp(since),
+            )
         self._task_discovery_since = since
-        self.logger.info(
-            "Two-way sync window full_sync=%s lookback_seconds=%d since=%s",
-            self.full_sync,
-            self.incremental_lookback_seconds,
-            self._format_timestamp(since),
-        )
         self.logger.debug(
             "Two-way sync directions tasks tracker->notion=%s notion->tracker=%s create tracker->notion=%s notion->tracker=%s",
             self.tasks_tracker_to_notion,

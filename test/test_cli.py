@@ -199,7 +199,23 @@ notion_tasks_id = "tasks-id"
         self.assertIs(synchronize.await_args.kwargs["dry"], True)
         self.assertIs(synchronize.await_args.kwargs["tracker"], tracker)
 
-    async def test_lookback_cli_overrides_twoway_config(self):
+    async def test_twoway_without_lookback_requests_full_sync(self):
+        result, _, _, synchronize = await self._run_twoway_cli(
+            """
+[sync.services]
+method = "tracker_twoway"
+tracker = "github"
+repositories = ["example/repo"]
+notion_milestones_id = "milestones-id"
+notion_tasks_id = "tasks-id"
+incremental_lookback_seconds = 60
+""",
+        )
+
+        self.assertEqual(result, 0)
+        self.assertIsNone(synchronize.await_args.kwargs["incremental_lookback_seconds"])
+
+    async def test_lookback_cli_is_forwarded_to_twoway_sync(self):
         result, _, _, synchronize = await self._run_twoway_cli(
             """
 [sync.services]
