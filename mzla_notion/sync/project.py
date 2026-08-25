@@ -91,9 +91,7 @@ class ProjectSync(BaseSync):
         self._set_if_date_prop(notion_data, "notion_epics_dates", ensure_date(final_start), ensure_date(final_end))
 
         page = await self.epics_db.create_page(notion_data)
-        logger.info(
-            f"Creating epic {tracker_issue.id} - {tracker_issue.title} ({tracker_issue.url} / {page.get('url')})"
-        )
+        logger.info(f"Creating epic (Tracker->Notion) {tracker_issue.url} - {tracker_issue.title}")
 
         if not self.dry:
             await self.synchronize_single_epic(tracker_issue, page, skip_unchanged_msg=True)
@@ -139,9 +137,7 @@ class ProjectSync(BaseSync):
         )
 
         if tracker_issue != new_issue:
-            logger.info(
-                f"Updating epic {tracker_issue.id} - {tracker_issue.title} ({tracker_issue.url} / {new_issue.notion_url})"
-            )
+            logger.info(f"Updating epic (Notion->Tracker) {tracker_issue.url} - {new_issue.title}")
             diff_dataclasses(tracker_issue, new_issue, log=logger.debug)
             await self.tracker.update_milestone_issue(tracker_issue, new_issue)
         elif not skip_unchanged_msg:
@@ -210,9 +206,7 @@ class ProjectSync(BaseSync):
 
         logger.debug(notion_data)
         page = await self.milestones_db.create_page(notion_data)
-        logger.info(
-            f"Creating milestone {tracker_issue.id} - {tracker_issue.title} ({tracker_issue.url} / {page.get('url')})"
-        )
+        logger.info(f"Creating milestone (Tracker->Notion) {tracker_issue.url} - {tracker_issue.title}")
 
         if not self.dry:
             await self.synchronize_single_milestone(tracker_issue, page, skip_unchanged_msg=True)
@@ -270,19 +264,20 @@ class ProjectSync(BaseSync):
             new_issue.issue_type = self.milestones_issue_type
 
         if self.propnames["notion_milestones_epic_relation"]:
-            relation_value = [epic_parent["id"]] if epic_parent else []
-            changed = await self.milestones_db.update_page(
-                page, {self.propnames["notion_milestones_epic_relation"]: relation_value}
-            )
+            relation_data = {
+                self.propnames["notion_milestones_epic_relation"]: [epic_parent["id"]] if epic_parent else []
+            }
+            changed = self.milestones_db.page_diff(relation_data, page, log=False)
             if changed:
                 logger.info(
-                    f"Updating milestone epic relation {tracker_issue.id} - {tracker_issue.title} ({tracker_issue.url})"
+                    f"Updating milestone epic relation (Tracker->Notion) {page.get('url')} - {tracker_issue.title}"
                 )
+                self.milestones_db.page_diff(relation_data, page, log=True)
+                logger.debug(relation_data)
+                await self.milestones_db.update_page(page, relation_data, diff_log=False)
 
         if tracker_issue != new_issue:
-            logger.info(
-                f"Updating milestone {tracker_issue.id} - {tracker_issue.title} ({tracker_issue.url} / {new_issue.notion_url})"
-            )
+            logger.info(f"Updating milestone (Notion->Tracker) {tracker_issue.url} - {new_issue.title}")
             diff_dataclasses(tracker_issue, new_issue, log=logger.debug)
 
             await self.tracker.update_milestone_issue(tracker_issue, new_issue)

@@ -210,7 +210,12 @@ class NotionDatabase:
             await self.notion.pages.update(page_id, archived=True)
 
     async def update_page(
-        self, page: Dict[str, Any], datadict: Dict[str, Any], diff_log: bool = True, **kwargs
+        self,
+        page: Dict[str, Any],
+        datadict: Dict[str, Any],
+        diff_log: bool = True,
+        diff_log_level: int = logging.DEBUG,
+        **kwargs,
     ) -> bool:
         """Update `page` with the data in `datadict`. Updates only occur if `page` and `datadict` are different."""
         icon_differs = (
@@ -223,7 +228,7 @@ class NotionDatabase:
         if icon_differs:
             update_kwargs["icon"] = kwargs["icon"]
 
-        if self.page_diff(datadict, page, log=diff_log):
+        if self.page_diff(datadict, page, log=diff_log, log_level=diff_log_level):
             data = self.dict_to_page(datadict)
             update_kwargs["properties"] = data
 
@@ -233,15 +238,18 @@ class NotionDatabase:
         # Change was made if there was some form of update
         return len(update_kwargs) > 0
 
-    def page_diff(self, datadict: Dict[str, Any], page: Dict[str, Any], log: bool = True) -> bool:
+    def page_diff(
+        self, datadict: Dict[str, Any], page: Dict[str, Any], log: bool = True, log_level: int = logging.DEBUG
+    ) -> bool:
         """Return true or false based on whether the Notion `datadict` matches `page` or not."""
         cur_props = self.properties
 
         # The status property needs special handling if it exists since it isn't a registered property.
         if datadict.get("Status") and datadict["Status"] != page["properties"]["Status"]["status"]["name"]:
             if log:
-                logger.debug(
-                    f"\tStatus changed from {page['properties']['Status']['status']['name']} to {datadict['Status']}"
+                logger.log(
+                    log_level,
+                    f"\tStatus changed from {page['properties']['Status']['status']['name']} to {datadict['Status']}",
                 )
             return True
         # Loop over all properties and see if any are different.
@@ -254,7 +262,9 @@ class NotionDatabase:
             if prop_name in cur_props and cur_props[prop_name].is_prop_diff(old_prop, prop_value):
                 old_prop_value = old_prop.get(old_prop.get("type"))
                 if log:
-                    logger.debug(f"{prop_name} on {page['url']} changing from {old_prop_value} to {prop_value}")
+                    logger.log(
+                        log_level, f"\t{prop_name} on {page['url']} changing from {old_prop_value} to {prop_value}"
+                    )
                 changed = True
         return changed
 

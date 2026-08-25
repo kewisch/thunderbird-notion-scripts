@@ -433,7 +433,7 @@ class TwoWaySyncTest(BaseTestCase):
             recent_ids=[("repo", "502")],
         )
 
-        with self.assertLogs("project_sync", level="INFO") as logs:
+        with self.assertLogs("twoway_sync", level="INFO") as logs:
             await self._run_sync(
                 tracker,
                 tasks_tracker_to_notion=True,
@@ -485,7 +485,7 @@ class TwoWaySyncTest(BaseTestCase):
             recent_ids=[("repo", "1253")],
         )
 
-        with self.assertLogs("project_sync", level="INFO") as logs:
+        with self.assertLogs("twoway_sync", level="INFO") as logs:
             await self._run_sync(
                 tracker,
                 tasks_tracker_to_notion=True,
@@ -515,7 +515,7 @@ class TwoWaySyncTest(BaseTestCase):
             recent_ids=[("repo", "1254")],
         )
 
-        with self.assertLogs("project_sync", level="INFO") as logs:
+        with self.assertLogs("twoway_sync", level="INFO") as logs:
             await self._run_sync(
                 tracker,
                 tasks_tracker_to_notion=True,
@@ -544,7 +544,7 @@ class TwoWaySyncTest(BaseTestCase):
             recent_ids=[("repo", "1255")],
         )
 
-        with self.assertLogs("project_sync", level="INFO") as logs:
+        with self.assertLogs("twoway_sync", level="INFO") as logs:
             await self._run_sync(
                 tracker,
                 tasks_tracker_to_notion=True,
@@ -596,7 +596,7 @@ class TwoWaySyncTest(BaseTestCase):
             recent_ids=[("repo", "997")],
         )
 
-        with self.assertLogs("project_sync", level="INFO") as logs:
+        with self.assertLogs("twoway_sync", level="INFO") as logs:
             await self._run_sync(
                 tracker,
                 milestones_issue_type="Milestone",

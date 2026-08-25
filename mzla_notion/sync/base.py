@@ -19,8 +19,6 @@ from .. import notion_data as p
 from ..notion_data import NotionDatabase
 from ..util import getnestedattr, AsyncRetryingClient, ensure_datetime, from_isoformat, guard_notion_query_response
 
-logger = logging.getLogger("project_sync")
-
 
 class BaseSync:
     """Base class for project and label sync."""
@@ -53,6 +51,7 @@ class BaseSync:
         team_association=None,
         dry=False,
         synchronous=False,
+        logger=logging.getLogger("base_sync"),
     ):
         """Set up the project sync.
 
@@ -93,9 +92,11 @@ class BaseSync:
             dry (bool): If true, only query operations are done. Mutations are disabled for both
                 the issue tracker and Notion.
             synchronous (bool): If true, run any async tasks sequentially.
+            logger (logging.Logger): Logger to use for sync progress messages.
         """
         self.notion = notion_client.AsyncClient(auth=notion_token, client=AsyncRetryingClient(http2=True))
         self.tracker = tracker
+        self.logger = logger
 
         # Epics Database (optional, enabled when epics_id is set)
         self.epics_db = None
@@ -442,7 +443,7 @@ class BaseSync:
             final_end = None
 
         if final_start and final_end and ensure_datetime(final_start) > ensure_datetime(final_end):
-            logger.warning(f"Issue {tracker_issue.url} ends before it starts ({final_start} – {final_end})")
+            self.logger.warning(f"Issue {tracker_issue.url} ends before it starts ({final_start} – {final_end})")
             final_end = final_start
 
         self._set_if_date_prop(notion_data, "notion_tasks_dates", final_start, final_end)
@@ -486,16 +487,17 @@ class BaseSync:
 
         await database.set_description(description)
 
-    async def synchronize_single_task(self, tracker_issue, page=None):
+    async def synchronize_single_task(self, tracker_issue, page=None, candidate_debug=None):
         """Synchronize a single tracker issue to Notion.
 
         Args:
             tracker_issue (Issue): tracker issue
             page (dict): The Notion page object of the existing task in notion. Leave out to add
                 instead of update.
+            candidate_debug (str): Optional timestamp decision context to log below the task status.
         """
         if tracker_issue.deeply_nested:
-            logger.info(f"Skipping nested task {tracker_issue.repo}#{tracker_issue.id} - {tracker_issue.title}")
+            self.logger.info(f"Skipping nested task {tracker_issue.repo}#{tracker_issue.id} - {tracker_issue.title}")
             return False
 
         if page:
@@ -503,7 +505,7 @@ class BaseSync:
                 lambda: self._get_prop(page, "notion_issue_field", [])[0]["external"]["url"], None
             )
             if old_issue_url and old_issue_url != tracker_issue.url:
-                logger.warning(
+                self.logger.warning(
                     f"Task URL changed for {tracker_issue.repo}#{tracker_issue.id}: {old_issue_url} -> {tracker_issue.url}"
                 )
 
@@ -515,15 +517,23 @@ class BaseSync:
         )
 
         if page:
-            changed = await self.tasks_db.update_page(page, notion_data)
+            changed = self.tasks_db.page_diff(notion_data, page, log=False)
             if changed:
-                logger.info(f"Updating task {tracker_issue.repo}#{tracker_issue.id} - {tracker_issue.title}")
-                logger.info("\t" + str(notion_data))
+                self.logger.info(f"Updating task (Tracker->Notion) {page.get('url')} - {tracker_issue.title}")
+                if candidate_debug:
+                    self.logger.debug(f"  timestamps: {candidate_debug}")
+                self.tasks_db.page_diff(notion_data, page, log=True, log_level=logging.INFO)
+                self.logger.debug("\t" + str(notion_data))
+                await self.tasks_db.update_page(page, notion_data, diff_log=False)
             else:
-                logger.info(f"Unchanged task {tracker_issue.repo}#{tracker_issue.id} - {tracker_issue.title}")
+                self.logger.info(f"Unchanged task {tracker_issue.repo}#{tracker_issue.id} - {tracker_issue.title}")
+                if candidate_debug:
+                    self.logger.debug(f"  timestamps: {candidate_debug}")
         else:
-            logger.info(f"Adding new task {tracker_issue.repo}#{tracker_issue.id} - {tracker_issue.title}")
-            logger.debug("\t" + str(notion_data))
+            self.logger.info(f"Creating task (Tracker->Notion) {tracker_issue.url} - {tracker_issue.title}")
+            if candidate_debug:
+                self.logger.debug(f"  timestamps: {candidate_debug}")
+            self.logger.debug("\t" + str(notion_data))
             page = await self.tasks_db.create_page(notion_data)
             changed = page is not None
 
