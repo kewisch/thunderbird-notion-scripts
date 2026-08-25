@@ -10,6 +10,9 @@ on:
       projects:
         type: string
         required: false
+      lookback:
+        type: string
+        required: false
 
   workflow_dispatch:
     inputs:
@@ -18,16 +21,20 @@ on:
       projects:
         type: string
         description: Enter one or more projects to sync. Leave empty for all.
+      lookback:
+        type: string
+        description: Enter lookback seconds or an ISO date/time. Leave empty for a full sync.
       dry:
         type: boolean
         description: Do a dry run
-      full_sync:
-        type: boolean
-        description: Disable incremental mode for supported synchronizers
 
 concurrency:
   group: synchronize
   cancel-in-progress: false
+
+permissions:
+  actions: read
+  contents: read
 
 
 jobs:
@@ -123,13 +130,45 @@ jobs:
           owner: thunderbird
           repositories: ${{ steps.get-repos.outputs.repositories }}
 
+      - name: Resolve sync window
+        id: lookback
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LOOKBACK_INPUT: ${{ inputs.lookback }}
+        run: |
+          args=""
+          if [ "${LOOKBACK_INPUT}" = "auto" ]
+          then
+            started_at="$(
+              gh run list \
+                --workflow cron.yml \
+                --branch main \
+                --status success \
+                --limit 1 \
+                --json startedAt \
+                --jq '.[0].startedAt // empty'
+            )"
+            if [ -n "${started_at}" ]
+            then
+              args="--lookback ${started_at}"
+            else
+              args="--full-sync"
+            fi
+          elif [ -n "${LOOKBACK_INPUT}" ]
+          then
+            args="--lookback ${LOOKBACK_INPUT}"
+          else
+            args="--full-sync"
+          fi
+          echo "args=${args}" >> "$GITHUB_OUTPUT"
+
       - name: Synchronize
         env:
           ENVIRONMENT: ${{ inputs.environment }}
           PROJECT: ${{ matrix.synchronizer }}
           VERBOSE: ${{ runner.debug && '-vv' || '' }}
           DRY: ${{ inputs.dry && '-n' || '' }}
-          FULL_SYNC: ${{ inputs.full_sync && '--full-sync' || '' }}
+          SYNC_WINDOW: ${{ steps.lookback.outputs.args }}
           NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
           GITHUB_TOKEN: ${{ steps.apptoken.outputs.token || secrets.GH_PAT }}
           PHAB_TOKEN: ${{ secrets.PHAB_TOKEN }}
@@ -137,5 +176,5 @@ jobs:
           NOTION_SYNC_GITHUB_USERMAP: ${{ vars.NOTION_SYNC_GITHUB_USERMAP }}
           NOTION_SYNC_BUGZILLA_USERMAP: ${{ vars.NOTION_SYNC_BUGZILLA_USERMAP }}
         run: |
-          uv run -m mzla_notion ${DRY} ${FULL_SYNC} ${VERBOSE} --twoway-cache \
+          uv run -m mzla_notion ${DRY} ${SYNC_WINDOW} ${VERBOSE} --twoway-cache \
             -c config/sync_settings.${ENVIRONMENT}.toml ${PROJECT}
