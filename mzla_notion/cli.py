@@ -87,6 +87,8 @@ def setup_logging(verbose):
     """Set up debugging based on verbosity level."""
     SYNC_LOGGERS = [
         "project_sync",
+        "twoway_sync",
+        "base_sync",
         "board_sync",
         "gh_fixups",
         "gh_label_sync",
