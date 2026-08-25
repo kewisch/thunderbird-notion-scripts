@@ -28,6 +28,11 @@ class TwoWayTestTracker(IssueTracker):
             "notion_milestones_assignee": "Owner",
             "notion_milestones_priority": "Priority",
             "notion_milestones_dates": "Dates",
+            "notion_milestones_epic_relation": "Epic",
+            "notion_epics_title": "Title",
+            "notion_epics_assignee": "Owner",
+            "notion_epics_priority": "Priority",
+            "notion_epics_dates": "Dates",
             "notion_tasks_title": "Title",
             "notion_tasks_assignee": "Owner",
             "notion_tasks_dates": "Dates",
@@ -79,6 +84,11 @@ class TwoWayTestTracker(IssueTracker):
     async def collect_tracker_milestones(self, milestones_issue_type, sub_issues=False):
         for issue in self.issues.values():
             if issue.issue_type == milestones_issue_type:
+                yield issue
+
+    async def collect_tracker_epics(self, epics_issue_type, sub_issues=False):
+        for issue in self.issues.values():
+            if issue.issue_type == epics_issue_type:
                 yield issue
 
     async def update_milestone_issue(self, old_issue, new_issue):
@@ -148,6 +158,16 @@ class TwoWaySyncTest(BaseTestCase):
     def _assert_stats_row(self, logs, label, task_count, milestone_count):
         output = "\n".join(logs.output)
         self.assertRegex(output, rf"Two-way sync stats\s+{label}\s+{task_count}\s+{milestone_count}")
+
+    def _set_epic_page_issue(self, issue_id):
+        page = self.notion_handler.epics_handler.pages[0]
+        page["properties"]["Issue Link"]["url"] = f"https://example.com/repo/{issue_id}"
+        return page
+
+    def _set_milestone_page_issue(self, issue_id):
+        page = self.notion_handler.milestones_handler.pages[0]
+        page["properties"]["Issue Link"]["url"] = f"https://example.com/repo/{issue_id}"
+        return page
 
     async def test_incremental_skips_when_not_recent(self):
         tracker = TwoWayTestTracker(
@@ -330,6 +350,214 @@ class TwoWaySyncTest(BaseTestCase):
         query_bodies = [call.request.content.decode("utf-8") for call in self.respx.routes["db_query"].calls]
         self.assertTrue(query_bodies)
         self.assertTrue(all("last_edited_time" in body for body in query_bodies))
+
+    async def test_linked_epic_updates_tracker_from_notion(self):
+        self._set_epic_page_issue("900")
+        tracker = TwoWayTestTracker(
+            issues=[
+                self._issue(
+                    "900",
+                    updated=datetime.datetime(2025, 1, 1, tzinfo=datetime.timezone.utc),
+                    title="Old epic title",
+                    issue_type="Epic",
+                ),
+            ],
+            recent_ids=[],
+        )
+
+        await self._run_sync(
+            tracker,
+            epics_id="epics_id",
+            epics_notion_to_tracker=True,
+            epics_tracker_to_notion=False,
+            tasks_tracker_to_notion=False,
+            milestones_notion_to_tracker=False,
+            full_sync=True,
+        )
+
+        self.assertEqual(len(tracker.updated_milestones), 1)
+        _, new_issue = tracker.updated_milestones[0]
+        self.assertEqual(new_issue.title, "Account Drawer Improvements")
+        self.assertEqual(new_issue.issue_type, "Epic")
+
+    async def test_linked_epic_updates_notion_from_tracker(self):
+        self._set_epic_page_issue("900")
+        tracker = TwoWayTestTracker(
+            issues=[
+                self._issue(
+                    "900",
+                    updated=datetime.datetime(2025, 1, 1, tzinfo=datetime.timezone.utc),
+                    title="Updated epic title",
+                    issue_type="Epic",
+                ),
+            ],
+            recent_ids=[("repo", "900")],
+        )
+
+        await self._run_sync(
+            tracker,
+            epics_id="epics_id",
+            epics_tracker_to_notion=True,
+            epics_notion_to_tracker=False,
+            tasks_tracker_to_notion=False,
+            milestones_notion_to_tracker=False,
+            full_sync=False,
+        )
+
+        epic_updates = [
+            call
+            for call in self.respx.routes["pages_update"].calls
+            if call.request.url.path == "/v1/pages/6f6fac28-6b63-48ca-90ec-0066be1a2755"
+        ]
+        self.assertEqual(len(epic_updates), 1)
+        title = json.loads(epic_updates[0].request.content)["properties"]["Title"]["title"][0]["text"]["content"]
+        self.assertEqual(title, "Updated epic title")
+
+    async def test_tracker_to_notion_epic_create(self):
+        tracker = TwoWayTestTracker(
+            issues=[
+                self._issue(
+                    "901",
+                    updated=datetime.datetime(2025, 1, 1, tzinfo=datetime.timezone.utc),
+                    title="New epic",
+                    issue_type="Epic",
+                ),
+            ],
+            recent_ids=[("repo", "901")],
+        )
+
+        with self.assertLogs("twoway_sync", level="INFO") as logs:
+            await self._run_sync(
+                tracker,
+                epics_id="epics_id",
+                epics_tracker_to_notion=True,
+                epics_tracker_to_notion_create=True,
+                epics_notion_to_tracker=False,
+                tasks_tracker_to_notion=False,
+                milestones_notion_to_tracker=False,
+                full_sync=True,
+            )
+
+        epic_creates = [
+            call
+            for call in self.respx.routes["pages_create"].calls
+            if json.loads(call.request.content)["parent"]["database_id"] == "epics_id"
+        ]
+        self.assertEqual(len(epic_creates), 1)
+        self._assert_stats_row(logs, "created from tracker", 0, 0)
+        self.assertRegex("\n".join(logs.output), r"created from tracker\s+0\s+0\s+1")
+
+    async def test_milestone_epic_relation_updates_in_twoway_sync(self):
+        self._set_epic_page_issue("900")
+        self._set_milestone_page_issue("901")
+        tracker = TwoWayTestTracker(
+            issues=[
+                self._issue(
+                    "901",
+                    updated=datetime.datetime(2025, 1, 1, tzinfo=datetime.timezone.utc),
+                    parents=[IssueRef(repo="repo", id="900")],
+                    title="Milestone with epic parent",
+                    issue_type="Milestone",
+                ),
+            ],
+            recent_ids=[("repo", "901")],
+        )
+
+        await self._run_sync(
+            tracker,
+            epics_id="epics_id",
+            milestones_issue_type="Milestone",
+            milestones_tracker_to_notion=True,
+            milestones_notion_to_tracker=False,
+            tasks_tracker_to_notion=False,
+            epics_tracker_to_notion=False,
+            epics_notion_to_tracker=False,
+            full_sync=False,
+        )
+
+        milestone_updates = [
+            call
+            for call in self.respx.routes["pages_update"].calls
+            if call.request.url.path == "/v1/pages/726fac28-6b63-48ca-90ec-0066be1a2755"
+        ]
+        self.assertEqual(len(milestone_updates), 1)
+        body = json.loads(milestone_updates[0].request.content)
+        self.assertEqual(
+            body["properties"]["Epic"]["relation"],
+            [{"id": "6f6fac286b6348ca90ec0066be1a2755"}],
+        )
+
+    async def test_warm_cache_retrieves_cached_recent_epic_page(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cache_path = Path(tmpdir) / "twoway.sqlite3"
+            self._set_epic_page_issue("900")
+            tracker = TwoWayTestTracker(
+                issues=[
+                    self._issue(
+                        "900",
+                        updated=datetime.datetime(2025, 1, 1, tzinfo=datetime.timezone.utc),
+                        issue_type="Epic",
+                    ),
+                ],
+                recent_ids=[("repo", "900")],
+            )
+            await self._run_sync(
+                tracker,
+                epics_id="epics_id",
+                full_sync=True,
+                twoway_cache_enabled=True,
+                twoway_cache_path=cache_path,
+            )
+
+            self.reset_handlers()
+            self._set_epic_page_issue("900")
+
+            tracker = TwoWayTestTracker(
+                issues=[
+                    self._issue(
+                        "900",
+                        updated=datetime.datetime(2025, 1, 2, tzinfo=datetime.timezone.utc),
+                        issue_type="Epic",
+                    ),
+                ],
+                recent_ids=[("repo", "900")],
+            )
+            await self._run_sync(
+                tracker,
+                epics_id="epics_id",
+                full_sync=False,
+                twoway_cache_enabled=True,
+                twoway_cache_path=cache_path,
+                epics_tracker_to_notion=True,
+                epics_notion_to_tracker=False,
+                tasks_tracker_to_notion=False,
+                milestones_notion_to_tracker=False,
+            )
+
+        retrieved_pages = [
+            call
+            for call in self.respx.routes["pages_retrieve"].calls
+            if call.request.url.path == "/v1/pages/6f6fac28-6b63-48ca-90ec-0066be1a2755"
+        ]
+        self.assertEqual(len(retrieved_pages), 1)
+
+    async def test_epic_notion_to_tracker_create_is_unsupported(self):
+        tracker = TwoWayTestTracker(issues=[], recent_ids=[])
+
+        with self.assertLogs("twoway_sync", level="WARNING") as logs:
+            await self._run_sync(
+                tracker,
+                epics_id="epics_id",
+                epics_notion_to_tracker=False,
+                epics_notion_to_tracker_create=True,
+                epics_tracker_to_notion=False,
+                tasks_tracker_to_notion=False,
+                milestones_notion_to_tracker=False,
+                full_sync=False,
+            )
+
+        self.assertEqual(tracker.updated_milestones, [])
+        self.assertIn("epics_notion_to_tracker_create is not supported", "\n".join(logs.output))
 
     async def test_full_sync_processes_linked_refs(self):
         tracker = TwoWayTestTracker(
