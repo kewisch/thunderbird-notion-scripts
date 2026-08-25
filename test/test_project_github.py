@@ -489,6 +489,15 @@ class GitHubProjectTest(BaseTestCase):
 
         self.assertEqual(len(self.github_handler.calls["set_issue_field_value_estimate"]), 1)
 
+    async def test_github_update_task_issue_updates_priority(self):
+        iterator = self.github.get_issues_by_number([IssueRef(repo="kewisch/test", id="1")], True)
+        old_issue = {issue.id: issue async for issue in iterator}["1"]
+        new_issue = dataclasses.replace(old_issue, priority="P3")
+
+        await self.github.update_task_issue(old_issue, new_issue)
+
+        self.assertEqual(len(self.github_handler.calls["set_issue_field_value_priority"]), 1)
+
     async def test_github_update_issue_fields_fail_fast_missing_notion_link(self):
         iterator = self.github.get_issues_by_number([IssueRef(repo="kewisch/test", id="1")], True)
         old_issue = {issue.id: issue async for issue in iterator}["1"]
