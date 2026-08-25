@@ -247,7 +247,8 @@ VERIFIED = "Canceled"
 "Canceled" = "RESOLVED"
 
 [sync.services]
-method = "github_project"
+method = "tracker_twoway"
+tracker = "github"
 notion_tasks_id = "2332df5d45ae8072aa7aededaf161252"
 notion_milestones_id = "2332df5d45ae80909305fe2278a14629"
 #notion_sprints_id = "2342df5d45ae806fb294c410dd0e71bd"
@@ -255,14 +256,39 @@ notion_milestones_id = "2332df5d45ae80909305fe2278a14629"
 notion_team_id = "2332df5d45ae80bc8839d089f5c7f608"
 notion_associated_team = ["2332df5d45ae8083af1dcda07b5c1eca", "31a2df5d45ae80d38897dd6efe4e134a"]
 
-epics_create_from_tracker = true
-epics_issue_type = "Epic"
+# Tasks sync
+tasks_conflict_preference = "tracker"
+tasks_body_sync = false
 
+tasks_tracker_to_notion = true
+tasks_notion_to_tracker = false
+
+tasks_tracker_to_notion_create = true
+tasks_notion_to_tracker_create = false
+
+
+# Milestones
 milestones_issue_type = "Milestone"
+milestones_conflict_preference = "notion"
 milestones_body_sync = false
 milestones_body_sync_if_empty = true
-milestones_create_from_tracker = true
-tasks_body_sync = false
+
+milestones_tracker_to_notion = true
+milestones_notion_to_tracker = true
+
+milestones_tracker_to_notion_create = true
+milestones_notion_to_tracker_create = false
+
+# Epics
+epics_issue_type = "Epic"
+epics_conflict_preference = "notion"
+epics_allow_parents = true
+
+epics_tracker_to_notion = true
+epics_notion_to_tracker = true
+
+epics_tracker_to_notion_create = true
+epics_notion_to_tracker_create = false # changed
 
 [sync.services.repositories]
 repositories = [
