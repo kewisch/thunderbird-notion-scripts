@@ -815,17 +815,24 @@ class TrackerTwoWaySync(BaseSync):
                 self.logger.debug(f"  timestamps: {candidate_debug}")
         return False
 
-    def _collect_candidates(self, notion_refs, recent_refs, since):
+    def _collect_candidates(self, notion_refs, recent_refs, since, tracker_to_notion, notion_to_tracker):
         linked = set(notion_refs.keys())
+        if not tracker_to_notion and not notion_to_tracker:
+            return set(), len(linked), len(linked)
+
         if self.full_sync:
             return linked, len(linked), 0
 
-        notion_recent = {
-            key for key, page in notion_refs.items() if (ts := self._page_timestamp(page)) is not None and ts >= since
-        }
-        tracker_recent = linked.intersection(recent_refs)
+        candidates = set()
+        if notion_to_tracker:
+            candidates.update(
+                key
+                for key, page in notion_refs.items()
+                if (ts := self._page_timestamp(page)) is not None and ts >= since
+            )
+        if tracker_to_notion:
+            candidates.update(linked.intersection(recent_refs))
 
-        candidates = notion_recent.union(tracker_recent)
         return candidates, len(linked), len(linked - candidates)
 
     async def _load_tracker_candidates(self, candidates, recent_by_repo):
@@ -909,6 +916,29 @@ class TrackerTwoWaySync(BaseSync):
             self.logger.debug("Filtered %d recent tracker issues from task processing", skipped)
 
         return task_issues
+
+    def _filter_milestone_issues_by_repo(self, issues_by_repo):
+        milestone_issues = defaultdict(dict)
+
+        for repo, issues in issues_by_repo.items():
+            for issue_id, issue in issues.items():
+                if self._is_milestone_issue(issue):
+                    milestone_issues[repo][issue_id] = issue
+
+        return milestone_issues
+
+    def _filter_epic_issues_by_repo(self, issues_by_repo):
+        epic_issues = defaultdict(dict)
+
+        if not self.epics_db:
+            return epic_issues
+
+        for repo, issues in issues_by_repo.items():
+            for issue_id, issue in issues.items():
+                if self._is_epic_issue(issue):
+                    epic_issues[repo][issue_id] = issue
+
+        return epic_issues
 
     def _filter_task_issues(self, issues):
         return {key: issue for key, issue in issues.items() if self._is_task_issue(issue)}
@@ -1036,45 +1066,6 @@ class TrackerTwoWaySync(BaseSync):
             await self._record_task_cache_update(page, tracker_issue)
         return changed
 
-    async def _get_tracker_milestones_for_create(self, since):
-        milestones = {}
-
-        if self.milestones_issue_type:
-            async for milestone in self.tracker.collect_tracker_milestones(self.milestones_issue_type, sub_issues=True):
-                if not self.full_sync and milestone.updated_date and milestone.updated_date < since:
-                    continue
-                milestones[(milestone.repo, milestone.id)] = milestone
-            return milestones
-
-        recent = await self.tracker.get_recent_issues_by_repo(since, sub_issues=False)
-        for repo, issues in recent.items():
-            for issue_id, issue in issues.items():
-                if self._is_milestone_issue(issue):
-                    milestones[(repo, issue_id)] = issue
-
-        return milestones
-
-    async def _get_tracker_epics_for_create(self, since):
-        epics = {}
-
-        if not self.epics_db:
-            return epics
-
-        if self.epics_issue_type:
-            async for epic in self.tracker.collect_tracker_epics(self.epics_issue_type, sub_issues=True):
-                if not self.full_sync and epic.updated_date and epic.updated_date < since:
-                    continue
-                epics[(epic.repo, epic.id)] = epic
-            return epics
-
-        recent = await self.tracker.get_recent_issues_by_repo(since, sub_issues=False)
-        for repo, issues in recent.items():
-            for issue_id, issue in issues.items():
-                if self._is_epic_issue(issue):
-                    epics[(repo, issue_id)] = issue
-
-        return epics
-
     def _new_stats(self):
         return {
             "tasks_updated_from_tracker": 0,
@@ -1099,8 +1090,8 @@ class TrackerTwoWaySync(BaseSync):
 
     async def _add_tracker_create_candidates(
         self,
-        since,
         recent_tasks_by_repo,
+        recent_milestones_by_repo,
         recent_epics_by_repo,
         notion_task_refs,
         notion_milestone_refs,
@@ -1119,16 +1110,18 @@ class TrackerTwoWaySync(BaseSync):
                         task_issues[key] = issue
 
         if self.milestones_tracker_to_notion and self.milestones_tracker_to_notion_create:
-            for key, issue in (await self._get_tracker_milestones_for_create(since)).items():
-                if key in notion_milestone_refs:
-                    continue
-                milestone_issues[key] = issue
+            for repo, issues in recent_milestones_by_repo.items():
+                for issue_id, issue in issues.items():
+                    key = (repo, issue_id)
+                    if key in notion_milestone_refs:
+                        continue
+                    milestone_issues[key] = issue
         elif self.milestones_tracker_to_notion:
             skipped_milestones = [
                 (repo, issue_id)
-                for repo, issues in recent_tasks_by_repo.items()
-                for issue_id, issue in issues.items()
-                if (repo, issue_id) not in notion_milestone_refs and self._is_milestone_issue(issue)
+                for repo, issues in recent_milestones_by_repo.items()
+                for issue_id in issues
+                if (repo, issue_id) not in notion_milestone_refs
             ]
             if skipped_milestones:
                 self.logger.info(
@@ -1137,10 +1130,12 @@ class TrackerTwoWaySync(BaseSync):
                 )
 
         if self.epics_db and self.epics_tracker_to_notion and self.epics_tracker_to_notion_create:
-            for key, issue in (await self._get_tracker_epics_for_create(since)).items():
-                if key in notion_epic_refs:
-                    continue
-                epic_issues[key] = issue
+            for repo, issues in recent_epics_by_repo.items():
+                for issue_id, issue in issues.items():
+                    key = (repo, issue_id)
+                    if key in notion_epic_refs:
+                        continue
+                    epic_issues[key] = issue
         elif self.epics_db and self.epics_tracker_to_notion:
             skipped_epics = [
                 (repo, issue_id)
@@ -1571,12 +1566,8 @@ class TrackerTwoWaySync(BaseSync):
             fetch_since = since if not self.full_sync else datetime.datetime(1970, 1, 1, tzinfo=datetime.UTC)
             recent_issues_by_repo = await self.tracker.get_recent_issues_by_repo(fetch_since, sub_issues=False)
             recent_tasks_by_repo = self._filter_task_issues_by_repo(recent_issues_by_repo)
-            recent_milestones_by_repo = recent_issues_by_repo
-            if self.epics_db:
-                recent_epics_by_repo = {
-                    repo: {issue_id: issue for issue_id, issue in issues.items() if self._is_epic_issue(issue)}
-                    for repo, issues in recent_issues_by_repo.items()
-                }
+            recent_milestones_by_repo = self._filter_milestone_issues_by_repo(recent_issues_by_repo)
+            recent_epics_by_repo = self._filter_epic_issues_by_repo(recent_issues_by_repo)
         else:
             self.logger.info(
                 "Two-way sync not fetching recent tracker issues because all tracker directions are disabled"
@@ -1620,13 +1611,25 @@ class TrackerTwoWaySync(BaseSync):
         )
 
         task_candidates, task_linked_count, task_skipped = self._collect_candidates(
-            notion_task_refs, recent_task_keys, since
+            notion_task_refs,
+            recent_task_keys,
+            since,
+            self.tasks_tracker_to_notion,
+            self.tasks_notion_to_tracker,
         )
         milestone_candidates, milestone_linked_count, milestone_skipped = self._collect_candidates(
-            notion_milestone_refs, recent_milestone_keys, since
+            notion_milestone_refs,
+            recent_milestone_keys,
+            since,
+            self.milestones_tracker_to_notion,
+            self.milestones_notion_to_tracker,
         )
         epic_candidates, epic_linked_count, epic_skipped = self._collect_candidates(
-            notion_epic_refs, recent_epic_keys, since
+            notion_epic_refs,
+            recent_epic_keys,
+            since,
+            self.epics_tracker_to_notion,
+            self.epics_notion_to_tracker,
         )
         task_candidates = await self._refresh_cached_candidate_pages(
             "task", self.tasks_db.database_id, notion_task_refs, task_candidates
@@ -1659,8 +1662,8 @@ class TrackerTwoWaySync(BaseSync):
         }
 
         await self._add_tracker_create_candidates(
-            since,
             recent_tasks_by_repo,
+            recent_milestones_by_repo,
             recent_epics_by_repo,
             notion_task_refs,
             notion_milestone_refs,
