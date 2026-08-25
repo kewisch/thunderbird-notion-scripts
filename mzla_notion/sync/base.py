@@ -522,7 +522,9 @@ class BaseSync:
                     self.logger.debug(f"  timestamps: {candidate_debug}")
                 self.tasks_db.page_diff(notion_data, page, log=True, log_level=logging.INFO)
                 self.logger.debug("\t" + str(notion_data))
-                await self.tasks_db.update_page(page, notion_data, diff_log=False)
+                updated_page = await self.tasks_db.update_page(page, notion_data, diff_log=False, return_page=True)
+                if updated_page:
+                    page = updated_page
             else:
                 if not self.hide_unchanged:
                     self.logger.info(f"Unchanged task {tracker_issue.repo}#{tracker_issue.id} - {tracker_issue.title}")

@@ -10,6 +10,7 @@ from freezegun import freeze_time
 
 from mzla_notion.sync.twoway import TrackerTwoWaySync
 from mzla_notion.tracker.common import Issue, IssueRef, IssueTracker, UserMap
+from mzla_notion.util import NotionQueryIncompleteError
 
 from .handlers import BaseTestCase
 
@@ -160,6 +161,40 @@ class TwoWaySyncTest(BaseTestCase):
         page["properties"]["Issue Link"]["url"] = f"https://example.com/repo/{issue_id}"
         return page
 
+    def _add_unlinked_task_page(self, page_id="bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", url=None):
+        page = {
+            "object": "page",
+            "id": page_id,
+            "created_time": "2025-01-01T00:00:00.000Z",
+            "last_edited_time": "2025-01-01T00:00:00.000Z",
+            "url": url or f"https://notion.so/example/{page_id}",
+            "properties": {
+                "Title": {
+                    "id": "title",
+                    "type": "title",
+                    "title": [
+                        {
+                            "type": "text",
+                            "text": {"content": "Create me"},
+                            "plain_text": "Create me",
+                        }
+                    ],
+                },
+                "Status": {
+                    "id": "st",
+                    "type": "status",
+                    "status": {"name": "Backlog"},
+                },
+                "Issue Link": {"type": "files", "files": []},
+                "Project": {
+                    "type": "relation",
+                    "relation": [{"id": "726fac28-6b63-48ca-90ec-0066be1a2755"}],
+                },
+            },
+        }
+        self.notion_handler.tasks_handler.pages.append(page)
+        return page
+
     async def test_incremental_skips_when_not_recent(self):
         tracker = TwoWayTestTracker(
             issues=[
@@ -220,6 +255,33 @@ class TwoWaySyncTest(BaseTestCase):
         title = json.loads(task_updates[0].request.content)["properties"]["Title"]["title"][0]["text"]["content"]
         self.assertEqual(title, "[prefix] Subissue 2 from tracker")
 
+    @freeze_time("2022-07-06T21:25:30Z", real_asyncio=True)
+    async def test_incremental_notion_window_includes_boundary_minute(self):
+        tracker = TwoWayTestTracker(
+            issues=[
+                self._issue(
+                    "345",
+                    updated=datetime.datetime(2022, 7, 6, 20, 0, tzinfo=datetime.timezone.utc),
+                    parents=[IssueRef(repo="repo", id="123")],
+                    title="Old tracker title",
+                ),
+            ],
+            recent_ids=[],
+        )
+
+        await self._run_sync(
+            tracker,
+            incremental_lookback_seconds=60 * 60,
+            tasks_tracker_to_notion=False,
+            tasks_notion_to_tracker=True,
+            milestones_tracker_to_notion=False,
+            milestones_notion_to_tracker=False,
+        )
+
+        self.assertEqual(len(tracker.updated_tasks), 1)
+        self.assertEqual(tracker.updated_tasks[0][1].title, "Subissue 2")
+        self.assertEqual(tracker.recent_since_calls[0], datetime.datetime(2022, 7, 6, 20, 25, tzinfo=datetime.UTC))
+
     async def test_warm_cache_retrieves_cached_recent_tracker_page(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             cache_path = Path(tmpdir) / "twoway.sqlite3"
@@ -278,6 +340,67 @@ class TwoWaySyncTest(BaseTestCase):
         self.assertEqual(len(retrieved_pages), 1)
         self.assertTrue(task_query_bodies)
         self.assertTrue(all("last_edited_time" in body for body in task_query_bodies))
+
+    async def test_warm_cache_stores_updated_task_page_snapshot(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cache_path = Path(tmpdir) / "twoway.sqlite3"
+            tracker = TwoWayTestTracker(
+                issues=[
+                    self._issue("123", updated=datetime.datetime(2025, 1, 1, tzinfo=datetime.timezone.utc)),
+                    self._issue(
+                        "345",
+                        updated=datetime.datetime(2025, 1, 1, tzinfo=datetime.timezone.utc),
+                        parents=[IssueRef(repo="repo", id="123")],
+                    ),
+                ],
+                recent_ids=[("repo", "123"), ("repo", "345")],
+            )
+            await self._run_sync(
+                tracker,
+                incremental_lookback_seconds=None,
+                twoway_cache_enabled=True,
+                twoway_cache_path=cache_path,
+            )
+
+            self.reset_handlers()
+
+            tracker = TwoWayTestTracker(
+                issues=[
+                    self._issue("123", updated=datetime.datetime(2025, 1, 1, tzinfo=datetime.timezone.utc)),
+                    self._issue(
+                        "345",
+                        updated=datetime.datetime(2025, 1, 2, tzinfo=datetime.timezone.utc),
+                        parents=[IssueRef(repo="repo", id="123")],
+                        title="Updated cached title",
+                    ),
+                ],
+                recent_ids=[("repo", "345")],
+            )
+            await self._run_sync(
+                tracker,
+                incremental_lookback_seconds=604800,
+                twoway_cache_enabled=True,
+                twoway_cache_path=cache_path,
+                tasks_tracker_to_notion=True,
+                tasks_notion_to_tracker=False,
+                milestones_tracker_to_notion=False,
+                milestones_notion_to_tracker=False,
+            )
+
+            with sqlite3.connect(cache_path) as conn:
+                page_json = conn.execute(
+                    """
+                    SELECT page_json
+                      FROM notion_page_links
+                     WHERE entity_kind = 'task'
+                       AND issue_repo = 'repo'
+                       AND issue_id = '345'
+                    """
+                ).fetchone()[0]
+
+        cached_page = json.loads(page_json)
+        title = cached_page["properties"]["Title"]["title"][0]["text"]["content"]
+        self.assertEqual(title, "[prefix] Updated cached title")
 
     async def test_dry_run_primes_and_reuses_twoway_cache(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -566,6 +689,32 @@ class TwoWaySyncTest(BaseTestCase):
         await self._run_sync(tracker, incremental_lookback_seconds=None)
         self.assertGreaterEqual(len(tracker.updated_milestones), 1)
         self.assertEqual(len(tracker.updated_tasks), 0)
+
+    async def test_partitioned_task_discovery_fails_on_incomplete_notion_query(self):
+        def incomplete_query(req):
+            return {
+                "results": [],
+                "has_more": False,
+                "next_cursor": None,
+                "request_status": {
+                    "type": "incomplete",
+                    "incomplete_reason": "query_result_limit_reached",
+                },
+            }
+
+        self.notion_handler.tasks_handler.query_handler = incomplete_query
+        tracker = TwoWayTestTracker(
+            issues=[self._issue("123", updated=datetime.datetime(2025, 1, 1, tzinfo=datetime.timezone.utc))],
+            recent_ids=[("repo", "123")],
+        )
+
+        with self.assertRaisesInGroup(NotionQueryIncompleteError, "incomplete results"):
+            await self._run_sync(
+                tracker,
+                tasks_notion_to_tracker=True,
+                tasks_notion_to_tracker_create=True,
+                incremental_lookback_seconds=None,
+            )
 
     async def test_lww_tie_break_defaults(self):
         tie_ts = datetime.datetime(2022, 7, 6, 20, 25, tzinfo=datetime.timezone.utc)
@@ -1119,39 +1268,8 @@ class TwoWaySyncTest(BaseTestCase):
 
     async def test_notion_to_tracker_task_create(self):
         # Add an unlinked active Notion task linked to milestone page 123.
-        self.notion_handler.tasks_handler.pages.append(
-            {
-                "object": "page",
-                "id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
-                "created_time": "2025-01-01T00:00:00.000Z",
-                "last_edited_time": "2025-01-01T00:00:00.000Z",
-                "url": "https://notion.so/example/new-task",
-                "properties": {
-                    "Title": {
-                        "id": "title",
-                        "type": "title",
-                        "title": [
-                            {
-                                "type": "text",
-                                "text": {"content": "Create me"},
-                                "plain_text": "Create me",
-                            }
-                        ],
-                    },
-                    "Status": {
-                        "id": "st",
-                        "type": "status",
-                        "status": {"name": "Backlog"},
-                    },
-                    "Issue Link": {"type": "files", "files": []},
-                    "Estimate": {"type": "select", "select": {"name": "5"}},
-                    "Project": {
-                        "type": "relation",
-                        "relation": [{"id": "726fac28-6b63-48ca-90ec-0066be1a2755"}],
-                    },
-                },
-            }
-        )
+        page = self._add_unlinked_task_page(url="https://notion.so/example/new-task")
+        page["properties"]["Estimate"] = {"type": "select", "select": {"name": "5"}}
 
         tracker = TwoWayTestTracker(
             issues=[

@@ -350,7 +350,25 @@ class NotionHandler:
         )
 
         if page:
-            # TODO do we need to update this?
+            data = json.loads(req.content.decode("utf-8"))
+            if "properties" in data:
+                for prop_name, prop_data in data["properties"].items():
+                    if len(prop_data) == 1:
+                        prop_data = {"type": next(iter(prop_data)), **prop_data}
+                    if prop_data["type"] in ("rich_text", "text", "title"):
+                        for text_prop in prop_data[prop_data["type"]]:
+                            if "plain_text" not in text_prop:
+                                text_prop["plain_text"] = text_prop["text"]["content"]
+                    page["properties"][prop_name] = {
+                        **page.get("properties", {}).get(prop_name, {}),
+                        **prop_data,
+                    }
+            if "archived" in data:
+                page["archived"] = data["archived"]
+            if "last_edited_time" in page:
+                page["last_edited_time"] = (
+                    datetime.datetime.now(datetime.UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+                )
             return httpx.Response(200, json=page)
 
         return httpx.Response(404)

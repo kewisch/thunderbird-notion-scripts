@@ -215,8 +215,9 @@ class NotionDatabase:
         datadict: Dict[str, Any],
         diff_log: bool = True,
         diff_log_level: int = logging.DEBUG,
+        return_page: bool = False,
         **kwargs,
-    ) -> bool:
+    ) -> bool | Dict[str, Any] | None:
         """Update `page` with the data in `datadict`. Updates only occur if `page` and `datadict` are different."""
         icon_differs = (
             "icon" in kwargs
@@ -232,8 +233,12 @@ class NotionDatabase:
             data = self.dict_to_page(datadict)
             update_kwargs["properties"] = data
 
+        updated_page = page
         if not self.dry and update_kwargs:
-            await self.notion.pages.update(page["id"], **update_kwargs)
+            updated_page = await self.notion.pages.update(page["id"], **update_kwargs)
+
+        if return_page:
+            return updated_page if update_kwargs else None
 
         # Change was made if there was some form of update
         return len(update_kwargs) > 0
