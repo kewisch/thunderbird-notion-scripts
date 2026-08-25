@@ -1,0 +1,49 @@
+import unittest
+from unittest.mock import AsyncMock, patch
+
+import httpx
+
+from mzla_notion.util import AsyncRetryingClient
+
+
+class AsyncRetryingClientRateLimitTest(unittest.IsolatedAsyncioTestCase):
+    async def test_github_graphql_rate_limit_retries_until_reset_header(self):
+        calls = 0
+
+        async def handler(request):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                return httpx.Response(
+                    200,
+                    headers={
+                        "content-type": "application/json",
+                        "x-ratelimit-limit": "5000",
+                        "x-ratelimit-remaining": "0",
+                        "x-ratelimit-reset": "1700000060",
+                        "x-ratelimit-resource": "graphql",
+                        "x-ratelimit-used": "5000",
+                    },
+                    json={"errors": [{"message": "API rate limit already exceeded for installation ID #123123"}]},
+                )
+
+            return httpx.Response(200, json={"data": {"ok": True}})
+
+        transport = httpx.MockTransport(handler)
+        async with AsyncRetryingClient(transport=transport) as client:
+            with (
+                patch("mzla_notion.util.time.time", return_value=1700000000.2),
+                patch("mzla_notion.util.rate_limit_gate.engage", new=AsyncMock()) as engage,
+                self.assertLogs("notion_sync", level="INFO") as logs,
+            ):
+                response = await client.post("https://api.github.com/graphql", json={"query": "{ viewer { login } }"})
+
+        self.assertEqual(response.json(), {"data": {"ok": True}})
+        self.assertEqual(calls, 2)
+        engage.assert_awaited_once_with(60)
+        self.assertIn("retry_source=x-ratelimit-reset", "\n".join(logs.output))
+        self.assertIn("reset_at=2023-11-14T22:14:20+00:00", "\n".join(logs.output))
+
+
+if __name__ == "__main__":
+    unittest.main()
