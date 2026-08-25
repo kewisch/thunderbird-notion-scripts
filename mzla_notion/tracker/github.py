@@ -119,7 +119,14 @@ class GitHub(IssueTracker, GitHubFixups):
     name = "GitHub"
 
     def __init__(
-        self, token=None, repositories={}, user_map=None, milestones_issue_type=None, epics_issue_type="Epic", **kwargs
+        self,
+        token=None,
+        repositories={},
+        user_map=None,
+        milestones_issue_type=None,
+        epics_issue_type="Epic",
+        epics_allow_parents=False,
+        **kwargs,
     ):
         """Initialize issue tracker."""
         super().__init__(**kwargs)
@@ -135,6 +142,7 @@ class GitHub(IssueTracker, GitHubFixups):
         self.issue_planning_cache = IssuePlanningCache(self.endpoint)
         self.milestones_issue_type = milestones_issue_type
         self.epics_issue_type = epics_issue_type
+        self.epics_allow_parents = epics_allow_parents
 
         self._init_repository_settings(repositories)
         self._raw_user_map = user_map

@@ -198,6 +198,7 @@ async def cmd_synchronize(
                     user_map=user_map.get("github") or {},
                     milestones_issue_type=project.get("milestones_issue_type", None),
                     epics_issue_type=project.get("epics_issue_type", "Epic"),
+                    epics_allow_parents=project.get("epics_allow_parents", False),
                     property_names=project.get("properties", {}),
                 )
 
@@ -251,6 +252,7 @@ async def cmd_synchronize(
                     user_map=user_map.get("github") or {},
                     milestones_issue_type=project.get("milestones_issue_type", None),
                     epics_issue_type=project.get("epics_issue_type", "Epic"),
+                    epics_allow_parents=project.get("epics_allow_parents", False),
                     property_names=project.get("properties", {}),
                 )
             else:

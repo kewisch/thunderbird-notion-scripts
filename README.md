@@ -130,6 +130,10 @@ milestones_github_prefix = "[EPIC] "
 # If you want all GitHub issues connected to milestones to have a label applied, set this property.
 milestones_github_label = "type: epic"
 
+# By default, Epic issues cannot have parents. Set this to true to allow Epic issues to have a
+# parent, but only when that parent has no GitHub issue type assigned.
+epics_allow_parents = false
+
 # Likewise, you might want to prefix all synced Notion tasks so you can easier identify them between
 # other high level tasks.
 tasks_notion_prefix = "[GitHub] "

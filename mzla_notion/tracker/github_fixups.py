@@ -28,6 +28,16 @@ class GitHubFixups:
         issue_type = self._issue_type_name(ghissue)
         return bool(issue_type and issue_type == self.epics_issue_type)
 
+    def _is_allowed_epic_parent(self, ghissue):
+        parent = getattr(ghissue, "parent", None)
+        return bool(
+            self._is_epic_issue(ghissue)
+            and self.epics_allow_parents
+            and parent
+            and getattr(parent, "number", None)
+            and not self._issue_type_name(parent)
+        )
+
     def _is_roadmap_issue(self, ghissue, sub_issues):
         if self._is_milestone_issue(ghissue) or self._is_epic_issue(ghissue):
             return True
@@ -139,7 +149,9 @@ class GitHubFixups:
 
         if tasks_project_item and milestones_project_item:
             # Issues cannot be on both tasks and milestone projects
-            if not ghissue.parent and (self._is_roadmap_issue(ghissue, sub_issues)):
+            if (not ghissue.parent or self._is_allowed_epic_parent(ghissue)) and (
+                self._is_roadmap_issue(ghissue, sub_issues)
+            ):
                 # This is a milestone, or it at least has sub-issues. Remove it from the task
                 # project
                 logger.warning(
@@ -212,6 +224,30 @@ class GitHubFixups:
                     op.remove_sub_issue(input={"issue_id": parent_id, "sub_issue_id": ghissue.id})
                     tg.create_task(self.endpoint(op))
 
+        if self._is_epic_issue(ghissue) and ghissue.parent and ghissue.parent.number:
+            parent_type = self._issue_type_name(ghissue.parent)
+            if not self.epics_allow_parents or parent_type:
+                logger.warning(
+                    f"Issue https://github.com/{orgrepo}/issues/{ghissue.number} has an invalid parent for epic type,"
+                    " removing parent."
+                )
+                parent_id = ghissue.parent.id
+                ghissue.parent = None
+
+                async with asyncio.TaskGroup() as tg:
+                    if not self.dry:
+                        tg.create_task(
+                            self._comment_on_issue(
+                                ghissue,
+                                "Epic issues can only have untyped parents when epics_allow_parents "
+                                "is enabled. Removing invalid parent relation.",
+                            )
+                        )
+
+                        op = Operation(schema.mutation_type)
+                        op.remove_sub_issue(input={"issue_id": parent_id, "sub_issue_id": ghissue.id})
+                        tg.create_task(self.endpoint(op))
+
         if self._is_epic_issue(ghissue):
             subissue_nodes = getnestedattr(lambda: ghissue.sub_issues.nodes, []) or []
             invalid_sub_issues = [
@@ -243,6 +279,9 @@ class GitHubFixups:
                         tg.create_task(self.endpoint(op))
 
         if milestones_project_item and ghissue.parent and ghissue.parent.number:
+            if self._is_allowed_epic_parent(ghissue):
+                return
+
             # This is an issue with a parent, but it is also on the milestones board. This can
             # happen when you create sub-issues of items on the milestone board, github defaults to
             # adding it to the project.
