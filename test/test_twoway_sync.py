@@ -1,6 +1,10 @@
 import datetime
 import json
+import sqlite3
+import tempfile
 import unittest
+
+from pathlib import Path
 
 from freezegun import freeze_time
 
@@ -205,6 +209,127 @@ class TwoWaySyncTest(BaseTestCase):
         self.assertEqual(len(task_updates), 1)
         title = json.loads(task_updates[0].request.content)["properties"]["Title"]["title"][0]["text"]["content"]
         self.assertEqual(title, "[prefix] Subissue 2 from tracker")
+
+    async def test_warm_cache_retrieves_cached_recent_tracker_page(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cache_path = Path(tmpdir) / "twoway.sqlite3"
+            tracker = TwoWayTestTracker(
+                issues=[
+                    self._issue("123", updated=datetime.datetime(2025, 1, 1, tzinfo=datetime.timezone.utc)),
+                    self._issue(
+                        "345",
+                        updated=datetime.datetime(2025, 1, 1, tzinfo=datetime.timezone.utc),
+                        parents=[IssueRef(repo="repo", id="123")],
+                    ),
+                ],
+                recent_ids=[("repo", "123"), ("repo", "345")],
+            )
+            await self._run_sync(
+                tracker,
+                full_sync=True,
+                twoway_cache_enabled=True,
+                twoway_cache_path=cache_path,
+            )
+
+            self.reset_handlers()
+
+            tracker = TwoWayTestTracker(
+                issues=[
+                    self._issue("123", updated=datetime.datetime(2025, 1, 1, tzinfo=datetime.timezone.utc)),
+                    self._issue(
+                        "345",
+                        updated=datetime.datetime(2025, 1, 2, tzinfo=datetime.timezone.utc),
+                        parents=[IssueRef(repo="repo", id="123")],
+                    ),
+                ],
+                recent_ids=[("repo", "345")],
+            )
+            await self._run_sync(
+                tracker,
+                full_sync=False,
+                twoway_cache_enabled=True,
+                twoway_cache_path=cache_path,
+                tasks_tracker_to_notion=True,
+                tasks_notion_to_tracker=False,
+                milestones_tracker_to_notion=False,
+                milestones_notion_to_tracker=False,
+            )
+
+        retrieved_pages = [
+            call
+            for call in self.respx.routes["pages_retrieve"].calls
+            if call.request.url.path == "/v1/pages/a4e70f0b-b5b1-43ca-ac0e-7723ae7dc359"
+        ]
+        task_query_bodies = [
+            call.request.content.decode("utf-8")
+            for call in self.respx.routes["db_query"].calls
+            if call.request.url.path == "/v1/databases/tasks_id/query"
+        ]
+        self.assertEqual(len(retrieved_pages), 1)
+        self.assertTrue(task_query_bodies)
+        self.assertTrue(all("last_edited_time" in body for body in task_query_bodies))
+
+    async def test_dry_run_primes_and_reuses_twoway_cache(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cache_path = Path(tmpdir) / "twoway.sqlite3"
+            tracker = TwoWayTestTracker(
+                issues=[
+                    self._issue("123", updated=datetime.datetime(2025, 1, 1, tzinfo=datetime.timezone.utc)),
+                    self._issue(
+                        "345",
+                        updated=datetime.datetime(2025, 1, 1, tzinfo=datetime.timezone.utc),
+                        parents=[IssueRef(repo="repo", id="123")],
+                    ),
+                ],
+                recent_ids=[("repo", "123"), ("repo", "345")],
+            )
+            await self._run_sync(
+                tracker,
+                full_sync=True,
+                dry=True,
+                twoway_cache_enabled=True,
+                twoway_cache_path=cache_path,
+            )
+
+            with sqlite3.connect(cache_path) as conn:
+                rows = conn.execute(
+                    """
+                    SELECT entity_kind, issue_repo, issue_id
+                      FROM notion_page_links
+                     ORDER BY entity_kind, issue_id
+                    """
+                ).fetchall()
+
+            self.assertEqual(rows, [("milestone", "repo", "123"), ("task", "repo", "345")])
+
+            self.reset_handlers()
+
+            tracker = TwoWayTestTracker(
+                issues=[
+                    self._issue("123", updated=datetime.datetime(2025, 1, 1, tzinfo=datetime.timezone.utc)),
+                    self._issue(
+                        "345",
+                        updated=datetime.datetime(2025, 1, 2, tzinfo=datetime.timezone.utc),
+                        parents=[IssueRef(repo="repo", id="123")],
+                    ),
+                ],
+                recent_ids=[("repo", "345")],
+            )
+            await self._run_sync(
+                tracker,
+                full_sync=False,
+                dry=True,
+                twoway_cache_enabled=True,
+                twoway_cache_path=cache_path,
+                tasks_tracker_to_notion=True,
+                tasks_notion_to_tracker=False,
+                milestones_tracker_to_notion=False,
+                milestones_notion_to_tracker=False,
+            )
+
+        query_bodies = [call.request.content.decode("utf-8") for call in self.respx.routes["db_query"].calls]
+        self.assertTrue(query_bodies)
+        self.assertTrue(all("last_edited_time" in body for body in query_bodies))
 
     async def test_full_sync_processes_linked_refs(self):
         tracker = TwoWayTestTracker(
@@ -612,6 +737,117 @@ class TwoWaySyncTest(BaseTestCase):
         self._assert_stats_row(logs, "created from tracker", 0, 1)
 
     async def test_tracker_to_notion_milestone_create_dry_run(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cache_path = Path(tmpdir) / "twoway.sqlite3"
+            tracker = TwoWayTestTracker(
+                issues=[
+                    self._issue(
+                        "998",
+                        updated=datetime.datetime(2025, 1, 1, tzinfo=datetime.timezone.utc),
+                        title="[meta] Dry Run Milestone",
+                    ),
+                ],
+                recent_ids=[("repo", "998")],
+            )
+
+            await self._run_sync(
+                tracker,
+                milestones_tracker_to_notion=True,
+                milestones_tracker_to_notion_create=True,
+                milestones_notion_to_tracker=False,
+                tasks_tracker_to_notion=False,
+                full_sync=False,
+                dry=True,
+                twoway_cache_enabled=True,
+                twoway_cache_path=cache_path,
+            )
+
+            with sqlite3.connect(cache_path) as conn:
+                dry_rows = conn.execute(
+                    """
+                    SELECT page_id, issue_id
+                      FROM notion_page_links
+                     WHERE page_id = 'dry'
+                        OR issue_id = '998'
+                    """
+                ).fetchall()
+
+        # NotionDatabase.create_page() returns a fake dry page; no remote create call is made.
+        self.assertEqual(self.respx.routes["pages_create"].calls.call_count, 0)
+        self.assertEqual(dry_rows, [])
+
+    async def test_notion_to_tracker_task_create_dry_run_does_not_cache_simulated_link_back(self):
+        self.notion_handler.tasks_handler.pages.append(
+            {
+                "object": "page",
+                "id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+                "created_time": "2025-01-01T00:00:00.000Z",
+                "last_edited_time": "2025-01-01T00:00:00.000Z",
+                "url": "https://notion.so/example/new-task",
+                "properties": {
+                    "Title": {
+                        "id": "title",
+                        "type": "title",
+                        "title": [
+                            {
+                                "type": "text",
+                                "text": {"content": "Create me"},
+                                "plain_text": "Create me",
+                            }
+                        ],
+                    },
+                    "Status": {
+                        "id": "st",
+                        "type": "status",
+                        "status": {"name": "Backlog"},
+                    },
+                    "Issue Link": {"type": "files", "files": []},
+                    "Project": {
+                        "type": "relation",
+                        "relation": [{"id": "726fac28-6b63-48ca-90ec-0066be1a2755"}],
+                    },
+                },
+            }
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cache_path = Path(tmpdir) / "twoway.sqlite3"
+            tracker = TwoWayTestTracker(
+                issues=[
+                    self._issue(
+                        "123",
+                        updated=datetime.datetime(2025, 1, 1, tzinfo=datetime.timezone.utc),
+                        title="Milestone",
+                    ),
+                ],
+                recent_ids=[("repo", "123")],
+            )
+
+            await self._run_sync(
+                tracker,
+                tasks_tracker_to_notion=False,
+                tasks_notion_to_tracker=True,
+                tasks_notion_to_tracker_create=True,
+                full_sync=True,
+                dry=True,
+                twoway_cache_enabled=True,
+                twoway_cache_path=cache_path,
+            )
+
+            with sqlite3.connect(cache_path) as conn:
+                simulated_rows = conn.execute(
+                    """
+                    SELECT page_id, issue_id
+                      FROM notion_page_links
+                     WHERE page_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'
+                        OR issue_id LIKE 'c%'
+                    """
+                ).fetchall()
+
+        self.assertEqual(len(tracker.created_tasks), 1)
+        self.assertEqual(simulated_rows, [])
+
+    async def test_tracker_to_notion_milestone_create_dry_run_legacy(self):
         tracker = TwoWayTestTracker(
             issues=[
                 self._issue(

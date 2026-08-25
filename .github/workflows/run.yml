@@ -90,6 +90,14 @@ jobs:
       - name: uv sync
         run: uv sync --locked --all-extras --dev
 
+      - name: Cache Notion sync data
+        uses: actions/cache@v5
+        with:
+          path: .cache/mzla-notion
+          key: notion-sync-${{ inputs.environment }}-${{ matrix.synchronizer }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            notion-sync-${{ inputs.environment }}-${{ matrix.synchronizer }}-
+
       - name: Get repositories
         id: get-repos
         env:
@@ -129,4 +137,5 @@ jobs:
           NOTION_SYNC_GITHUB_USERMAP: ${{ vars.NOTION_SYNC_GITHUB_USERMAP }}
           NOTION_SYNC_BUGZILLA_USERMAP: ${{ vars.NOTION_SYNC_BUGZILLA_USERMAP }}
         run: |
-          uv run -m mzla_notion ${DRY} ${FULL_SYNC} ${VERBOSE} -c config/sync_settings.${ENVIRONMENT}.toml ${PROJECT}
+          uv run -m mzla_notion ${DRY} ${FULL_SYNC} ${VERBOSE} --twoway-cache \
+            -c config/sync_settings.${ENVIRONMENT}.toml ${PROJECT}

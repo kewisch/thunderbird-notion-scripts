@@ -1,5 +1,13 @@
 # Development environment, for a personal Notion instance
 
+[people]
+notion_people_id = "33e2df5d45ae80b3ad01f6b4a1cb90d7"
+notion_people_uuid = "Person"
+notion_people_email = "Email"
+notion_people_github = "GitHub Profile"
+notion_people_bugzilla = "Bugzilla Email"
+notion_people_phabricator = "Phabricator Username"
+
 [sync]
 
 
@@ -17,12 +25,15 @@ milestones_body_sync_if_empty = true
 milestones_create_from_tracker = true
 tasks_body_sync = false
 incremental_lookback_seconds = 120
+milestones_issue_type = "Milestone"
 
 # Two-way directions (defaults shown explicitly)
 tasks_tracker_to_notion = true
 tasks_notion_to_tracker = true
 milestones_tracker_to_notion = true
 milestones_notion_to_tracker = true
+tasks_conflict_preference = "notion"
+milestones_conflict_preference = "notion"
 
 tasks_tracker_to_notion_create = true
 tasks_notion_to_tracker_create = true
@@ -35,8 +46,8 @@ milestones_notion_to_tracker_create = false
 repositories = [
   "thunderbird/test"
 ]
-#github_tasks_project_id = "PVT_kwHOAAlD3s4AxVFW"
-#github_milestones_project_id = "PVT_kwHOAAlD3s4AxVDI"
+github_tasks_project_id = "PVT_kwDOAOe9Jc4Bg7Zd"
+github_milestones_project_id = "PVT_kwDOAOe9Jc4Bg7NE"
 
 #[sync.mobile.repositories.test2]
 #repositories = [
@@ -69,7 +80,10 @@ notion_issue_field = "Bug URL"
 notion_default_open_state = "Backlog"
 notion_inprogress_state = "In progress"
 notion_closed_states = ["Done", "Canceled"]
-#notion_tasks_repository = "Product (Services)"
+notion_tasks_repository = "Product (Services)"
+
+[sync.services.properties.notion_tasks_repository_map]
+"thunderbird/test" = "Core Services"
 
 
 #[sync.bugzilla]
@@ -95,3 +109,170 @@ notion_closed_states = ["Done", "Canceled"]
 #notion_issue_field = "Bugzilla Issue"
 #notion_tasks_milestone_relation = "Milestone"
 #notion_tasks_priority_values = ["P1", "P2", "P3", "P4", "P5"]
+
+[sync.services_real]
+method = "tracker_twoway"
+tracker = "github"
+notion_tasks_id = "3372df5d45ae808f83dcce2c88580ffa"
+notion_milestones_id = "3372df5d45ae8099b384d3d8bb2b424d"
+
+notion_team_id = "2332df5d45ae80bc8839d089f5c7f608"
+notion_associated_team = ["2332df5d45ae8083af1dcda07b5c1eca", "31a2df5d45ae80d38897dd6efe4e134a"]
+
+milestones_body_sync = false
+milestones_body_sync_if_empty = true
+milestones_create_from_tracker = true
+tasks_body_sync = false
+incremental_lookback_seconds = 120
+milestones_issue_type = "Milestone"
+
+# Two-way directions (defaults shown explicitly)
+tasks_tracker_to_notion = true
+tasks_notion_to_tracker = false #changed
+milestones_tracker_to_notion = true
+milestones_notion_to_tracker = false #changed
+tasks_conflict_preference = "notion"
+milestones_conflict_preference = "notion"
+
+tasks_tracker_to_notion_create = true
+tasks_notion_to_tracker_create = false # changed
+milestones_tracker_to_notion_create = true
+milestones_notion_to_tracker_create = false # changed
+
+[sync.services_real.repositories]
+repositories = [
+  "thunderbird/appointment"
+]
+github_tasks_project_id = "PVT_kwDOAOe9Jc4Bg7Zd"
+github_milestones_project_id = "PVT_kwDOAOe9Jc4Bg7NE"
+
+[sync.services_real.properties]
+notion_tasks_title = "Name"
+notion_tasks_assignee = "Assignee"
+notion_tasks_dates = "Date"
+notion_tasks_planned_dates = "Original Due Date"
+#notion_tasks_openclose = ["Opened", "Closed"]
+notion_tasks_priority = "Priority"
+notion_tasks_estimate = "Estimate"
+notion_tasks_review_url = "Patch URL"
+notion_tasks_reviewers = "Peer Reviewer"
+notion_tasks_team = "Team"
+notion_tasks_milestone_relation = "Milestones"
+#notion_tasks_sprint_relation = "Sprint"
+notion_tasks_text_assignee = ""
+notion_tasks_labels = "Keywords (Services)"
+notion_milestones_title = "Name"
+notion_milestones_team = "Team"
+notion_milestones_assignee = "Assignee"
+notion_milestones_priority = "Priority"
+notion_milestones_dates = "Original Due Date"
+notion_issue_field = "Bug URL"
+notion_default_open_state = "Backlog"
+notion_inprogress_state = "In progress"
+notion_closed_states = ["Done", "Canceled"]
+notion_tasks_repository = "Product (Services)"
+
+[sync.services_real.properties.notion_tasks_repository_map]
+"thunderbird/appointment" = "Appointment"
+
+[sync.services_real_real]
+method = "tracker_twoway"
+tracker = "github"
+#dry = true
+
+twoway_cache_enabled = true
+twoway_cache_path = ".cache/mzla-notion/services.sqlite3"
+
+notion_tasks_id = "2332df5d45ae8072aa7aededaf161252"
+notion_milestones_id = "2332df5d45ae80909305fe2278a14629"
+
+notion_team_id = "2332df5d45ae80bc8839d089f5c7f608"
+notion_associated_team = ["2332df5d45ae8083af1dcda07b5c1eca", "31a2df5d45ae80d38897dd6efe4e134a"]
+
+milestones_body_sync = false
+milestones_body_sync_if_empty = true
+milestones_create_from_tracker = true
+tasks_body_sync = false
+incremental_lookback_seconds = 120
+milestones_issue_type = "Milestone"
+
+# Two-way directions (defaults shown explicitly)
+tasks_tracker_to_notion = true
+tasks_notion_to_tracker = false
+milestones_tracker_to_notion = true
+milestones_notion_to_tracker = true
+tasks_conflict_preference = "notion"
+milestones_conflict_preference = "notion"
+
+tasks_tracker_to_notion_create = true
+tasks_notion_to_tracker_create = false # changed
+milestones_tracker_to_notion_create = true
+milestones_notion_to_tracker_create = false # changed
+
+[sync.services_real_real.repositories]
+repositories = [
+    "thunderbird/addons-server",
+    "thunderbird/appointment",
+    "thunderbird/cloudops",
+    "thunderbird/mailstrom",
+    "thunderbird/observability",
+    "thunderbird/platform-infrastructure",
+    "thunderbird/pro",
+    "thunderbird/pulumi",
+    "thunderbird/services-ui",
+    "thunderbird/services-utils",
+    "thunderbird/tbpro-add-on",
+    "thunderbird/thunderbird-accounts",
+    "thunderbird/thunderbird-notifications",
+    "thunderbird/thunderbird-website",
+    "thunderbird/thundernest-ansible",
+    "thunderbird/routing",
+    "thunderbird/stormbox",
+]
+github_milestones_project_id = "PVT_kwDOAOe9Jc4BC48i"
+github_tasks_project_id = "PVT_kwDOAOe9Jc4BC4_0"
+
+[sync.services_real_real.properties]
+notion_tasks_title = "Name"
+notion_tasks_assignee = "Assignee"
+notion_tasks_dates = "Date"
+notion_tasks_planned_dates = "Original Due Date"
+#notion_tasks_openclose = ["Opened", "Closed"]
+notion_tasks_priority = "Priority"
+notion_tasks_estimate = "Estimate"
+notion_tasks_review_url = "Patch URL"
+notion_tasks_reviewers = "Peer Reviewer"
+notion_tasks_team = "Team"
+notion_tasks_milestone_relation = "Milestones"
+#notion_tasks_sprint_relation = "Sprint"
+notion_tasks_text_assignee = ""
+notion_tasks_labels = "Keywords (Services)"
+notion_milestones_title = "Name"
+notion_milestones_team = "Team"
+notion_milestones_assignee = "Assignee"
+notion_milestones_priority = "Priority"
+notion_milestones_dates = "Original Due Date"
+notion_issue_field = "Bug URL"
+notion_default_open_state = "Backlog"
+notion_inprogress_state = "In progress"
+notion_closed_states = ["Done", "Canceled"]
+notion_tasks_repository = "Product (Services)"
+
+[sync.services_real_real.properties.notion_tasks_repository_map]
+"thunderbird/addons-server" = "Core Services"
+"thunderbird/appointment" = "Appointment"
+"thunderbird/cloudops" = "Core Services"
+"thunderbird/mailstrom" = "Thundermail"
+"thunderbird/observability" = "Pro General"
+"thunderbird/platform-infrastructure" = "Core Services"
+"thunderbird/pro" = "Pro General"
+"thunderbird/pulumi" = "Pro General"
+"thunderbird/services-ui" = "Pro General"
+"thunderbird/services-utils" = "Pro General"
+"thunderbird/tbpro-add-on" = "Send"
+"thunderbird/thunderbird-accounts" = "Accounts"
+"thunderbird/thunderbird-notifications" = "Core Services"
+"thunderbird/thunderbird-website" = "Websites"
+"thunderbird/thundernest-ansible" = "Core Services"
+"thunderbird/routing" = "Pro General"
+"thunderbird/stormbox" = "Thundermail"
