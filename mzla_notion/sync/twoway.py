@@ -651,7 +651,7 @@ class TrackerTwoWaySync(BaseSync):
             notion_data,
             "notion_milestones_dates",
             ensure_date(tracker_issue.start_date),
-            ensure_date(tracker_issue.end_date or tracker_issue.closed_date),
+            ensure_date(tracker_issue.end_date),
         )
         if self.epics_db and self.propnames.get("notion_milestones_epic_relation"):
             epic_parent = self._find_milestone_epic_parent(tracker_issue)
