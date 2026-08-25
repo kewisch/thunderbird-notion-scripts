@@ -366,6 +366,7 @@ class GitHub(IssueTracker, GitHubFixups):
                 new_issue.description != old_issue.description,
                 new_issue.assignees != old_issue.assignees,
                 new_issue.labels != old_issue.labels,
+                new_issue.priority != old_issue.priority,
                 new_issue.estimate != old_issue.estimate,
                 self._state_bucket(new_issue.state) != self._state_bucket(old_issue.state),
             ]
@@ -492,7 +493,7 @@ class GitHub(IssueTracker, GitHubFixups):
         org, _ = new_issue.repo.split("/")
         issue_fields = []
 
-        if self.property_names.get("notion_milestones_priority"):
+        if self.property_names.get("notion_tasks_priority") or self.property_names.get("notion_milestones_priority"):
             if field_value_changed(old_issue.priority, new_issue.priority):
                 priority_field = await self.issue_planning_cache.get_issue_field(org, GITHUB_ISSUE_FIELD_PRIORITY)
                 if not priority_field or priority_field.data_type != "SINGLE_SELECT":
