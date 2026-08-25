@@ -134,7 +134,6 @@ async def cmd_synchronize(
     verbose=0,
     dry_run=None,
     synchronous=False,
-    full_sync=False,
     lookback=None,
     twoway_cache=None,
     twoway_cache_path=None,
@@ -283,9 +282,7 @@ async def cmd_synchronize(
                 team_association=project.get("notion_associated_team"),
                 dry=effective_dry_run,
                 synchronous=synchronous,
-                incremental_lookback_seconds=(
-                    lookback if lookback is not None else project.get("incremental_lookback_seconds", 7 * 24 * 60 * 60)
-                ),
+                incremental_lookback_seconds=lookback,
                 tasks_tracker_to_notion=project.get("tasks_tracker_to_notion", True),
                 tasks_notion_to_tracker=project.get("tasks_notion_to_tracker", False),
                 milestones_tracker_to_notion=project.get("milestones_tracker_to_notion", False),
@@ -307,7 +304,6 @@ async def cmd_synchronize(
                 ),
                 twoway_cache_path=twoway_cache_path
                 or project.get("twoway_cache_path", ".cache/mzla-notion/twoway.sqlite3"),
-                full_sync=full_sync,
                 hide_unchanged=hide_unchanged,
             )
         elif project["method"] == "github_labels":
@@ -388,17 +384,11 @@ async def async_main():
         help="Run requests in order, for debugging",
     )
     parser.add_argument(
-        "--full-sync",
-        action=argparse.BooleanOptionalAction,
-        default=False,
-        help="Disable incremental mode and synchronize all linked records for supported engines",
-    )
-    parser.add_argument(
         "--lookback",
         dest="lookback",
         type=parse_lookback,
         default=None,
-        help="Override incremental lookback window for supported engines. Specify seconds or an ISO date/time.",
+        help="Run supported engines incrementally using seconds or an ISO date/time as the lookback window.",
     )
     parser.add_argument(
         "--twoway-cache",
@@ -447,7 +437,6 @@ async def async_main():
                 verbose=args.verbose,
                 dry_run=args.dry_run,
                 synchronous=args.synchronous,
-                full_sync=args.full_sync,
                 lookback=args.lookback,
                 twoway_cache=args.twoway_cache,
                 twoway_cache_path=args.twoway_cache_path,
