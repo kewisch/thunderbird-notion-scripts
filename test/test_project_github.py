@@ -534,6 +534,11 @@ class GitHubProjectTest(BaseTestCase):
         self.assertFalse(field_value_changed(datetime.date(2025, 7, 4), "2025-07-04"))
         self.assertTrue(field_value_changed(datetime.date(2025, 7, 4), "2025-07-05"))
 
+    def test_field_value_changed_normalized_notion_url(self):
+        self.assertFalse(field_value_changed("https://app.notion.com/p/xxx", "https://www.notion.so/xxx"))
+        self.assertFalse(field_value_changed("https://app.notion.com/p/xxx", "https://notion.so/xxx"))
+        self.assertTrue(field_value_changed("https://app.notion.com/p/xxx", "https://www.notion.so/yyy"))
+
     def test_build_scalar_field_update_number(self):
         self.assertEqual(build_scalar_field_update("NUMBER", "5"), {"number_value": 5.0})
         self.assertEqual(build_scalar_field_update("NUMBER", 8), {"number_value": 8.0})

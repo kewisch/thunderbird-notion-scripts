@@ -24,8 +24,8 @@ class NotionQueryIncompleteError(RuntimeError):
     """Raised when Notion reports incomplete query results."""
 
 
-def normalize_notion_url(value):
-    """Normalize Notion URLs to canonical https://www.notion.so/... form."""
+def notion_url_page_key(value):
+    """Return a stable comparison key for Notion URLs."""
     if value in (None, ""):
         return None
     if not isinstance(value, str):
@@ -40,7 +40,46 @@ def normalize_notion_url(value):
     if hostname == "app.notion.com" and path.startswith("p/"):
         path = path[2:]
 
+    return path
+
+
+def normalize_notion_url(value):
+    """Normalize Notion URLs to canonical https://www.notion.so/... form."""
+    path = notion_url_page_key(value)
+    if path in (None, ""):
+        return None
+    if path == value and not isinstance(value, str):
+        return value
+
+    parts = urlsplit(value)
+    hostname = (parts.hostname or "").lower()
+    if hostname not in {"app.notion.com", "www.notion.so", "notion.so"}:
+        return value
+
     return f"https://www.notion.so/{path}"
+
+
+def canonical_notion_url(value):
+    """Normalize Notion URLs to canonical https://app.notion.com/p/... form."""
+    path = notion_url_page_key(value)
+    if path in (None, ""):
+        return None
+    if path == value and not isinstance(value, str):
+        return value
+
+    parts = urlsplit(value)
+    hostname = (parts.hostname or "").lower()
+    if hostname not in {"app.notion.com", "www.notion.so", "notion.so"}:
+        return value
+
+    return f"https://app.notion.com/p/{path}"
+
+
+def notion_url_equal(left, right):
+    """Return whether two values refer to the same Notion URL."""
+    left_key = notion_url_page_key(left)
+    right_key = notion_url_page_key(right)
+    return left_key == right_key
 
 
 def check_notion_request_status(response, context="Notion query", query_kwargs=None):

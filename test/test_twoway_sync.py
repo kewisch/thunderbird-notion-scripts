@@ -649,6 +649,33 @@ class TwoWaySyncTest(BaseTestCase):
         )
         await sync.notion.aclose()
 
+    async def test_notion_link_domain_change_does_not_update_tracker(self):
+        tracker_issue = self._issue(
+            "234",
+            updated=datetime.datetime(2025, 1, 1, tzinfo=datetime.timezone.utc),
+            parents=[IssueRef(repo="repo", id="123")],
+        )
+        tracker_issue.notion_url = "https://www.notion.so/xxx"
+        tracker = TwoWayTestTracker(issues=[tracker_issue])
+        sync = TrackerTwoWaySync(
+            project_key="twoway",
+            tracker=tracker,
+            notion_token="NOTION_TOKEN",
+            milestones_id="milestones_id",
+            tasks_id="tasks_id",
+            dry=True,
+        )
+
+        page = {
+            "url": "https://app.notion.com/p/xxx",
+            "properties": {"Title": {"type": "title", "title": []}},
+        }
+
+        new_issue = sync._get_task_tracker_issue_from_notion(tracker_issue, page)
+        self.assertEqual(new_issue.notion_url, "https://app.notion.com/p/xxx")
+        self.assertFalse(sync._task_needs_tracker_update(tracker_issue, page))
+        await sync.notion.aclose()
+
     async def test_task_estimate_maps_in_both_directions(self):
         tracker_issue = self._issue(
             "234",

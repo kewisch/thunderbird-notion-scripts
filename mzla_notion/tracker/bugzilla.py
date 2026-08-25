@@ -11,7 +11,7 @@ from functools import cache
 from dataclasses import dataclass, field
 
 from ..util import getnestedattr, AsyncRetryingClient, RetryingClient
-from ..util import normalize_notion_url
+from ..util import normalize_notion_url, notion_url_equal
 
 from .common import UserMap, IssueRef, Issue, User, IssueTracker
 
@@ -297,7 +297,7 @@ class Bugzilla(IssueTracker):
                 data["assigned_to"] = new_assignee.tracker_user if new_assignee else None
 
         # Notion URL
-        if old_issue.notion_url != new_issue.notion_url and new_issue.notion_url:
+        if not notion_url_equal(old_issue.notion_url, new_issue.notion_url) and new_issue.notion_url:
             data["see_also"] = {}
             if old_issue.notion_url:
                 data["see_also"]["remove"] = [old_issue.notion_url]
