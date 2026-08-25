@@ -1,6 +1,8 @@
 import datetime
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+
+from ..util import notion_url_equal
 
 
 @dataclass
@@ -212,10 +214,14 @@ class IssueTracker:
 
     def should_update_task_issue(self, old_issue, new_issue):
         """Return whether task update should be sent to tracker."""
+        if notion_url_equal(old_issue.notion_url, new_issue.notion_url):
+            old_issue = replace(old_issue, notion_url=new_issue.notion_url)
         return old_issue != new_issue
 
     def should_update_milestone_issue(self, old_issue, new_issue):
         """Return whether milestone update should be sent to tracker."""
+        if notion_url_equal(old_issue.notion_url, new_issue.notion_url):
+            old_issue = replace(old_issue, notion_url=new_issue.notion_url)
         return old_issue != new_issue
 
     def is_repo_allowed(self, repo):

@@ -13,7 +13,7 @@ from sgqlc.endpoint.httpx import HTTPXEndpoint
 from sgqlc.operation import Operation, GraphQLErrors
 
 from ..github_schema import schema
-from ..util import getnestedattr, AsyncRetryingClient, ensure_datetime
+from ..util import getnestedattr, AsyncRetryingClient, ensure_datetime, notion_url_equal
 
 from .common import UserMap, Sprint, IssueRef, Issue, User, IssueTracker
 from .github_fixups import GitHubFixups
@@ -395,7 +395,7 @@ class GitHub(IssueTracker, GitHubFixups):
                 new_issue.end_date != old_issue.end_date,
                 new_issue.issue_type != old_issue.issue_type,
                 self._state_bucket(new_issue.state) != self._state_bucket(old_issue.state),
-                has_milestone_project and new_issue.notion_url != old_issue.notion_url,
+                has_milestone_project and not notion_url_equal(new_issue.notion_url, old_issue.notion_url),
             ]
         )
 

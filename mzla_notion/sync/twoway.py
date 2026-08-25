@@ -14,7 +14,7 @@ from notion_client.helpers import async_iterate_paginated_api
 from .base import BaseSync
 from .twoway_cache import TwoWayNotionCache
 
-from ..util import ensure_date, getnestedattr
+from ..util import canonical_notion_url, ensure_date, getnestedattr
 from ..tracker.common import IssueRef
 from ..util import diff_dataclasses
 from ..notion_data import CustomNotionToMarkdown
@@ -569,7 +569,7 @@ class TrackerTwoWaySync(BaseSync):
             state=(self._get_prop(page, "notion_epics_status") or {}).get("name"),
             priority=(self._get_prop(page, "notion_epics_priority") or {}).get("name"),
             assignees=community_assignees.union(epic_assignees),
-            notion_url=page.get("url", ""),
+            notion_url=canonical_notion_url(page.get("url", "")),
             start_date=ensure_date(start_date) if start_date else None,
             end_date=ensure_date(end_date) if end_date else None,
             issue_type=self.epics_issue_type or tracker_issue.issue_type,
@@ -735,7 +735,7 @@ class TrackerTwoWaySync(BaseSync):
             state=(self._get_prop(page, "notion_milestones_status") or {}).get("name"),
             priority=(self._get_prop(page, "notion_milestones_priority") or {}).get("name"),
             assignees=community_assignees.union(milestone_assignees),
-            notion_url=page.get("url", ""),
+            notion_url=canonical_notion_url(page.get("url", "")),
             start_date=ensure_date(start_date) if start_date else None,
             end_date=ensure_date(end_date) if end_date else None,
         )
@@ -783,7 +783,7 @@ class TrackerTwoWaySync(BaseSync):
             priority=priority or tracker_issue.priority,
             estimate=estimate,
             assignees=assignees if assignees else tracker_issue.assignees,
-            notion_url=page.get("url", tracker_issue.notion_url),
+            notion_url=canonical_notion_url(page.get("url", tracker_issue.notion_url)),
         )
 
     async def _task_needs_notion_update(self, tracker_issue, page):

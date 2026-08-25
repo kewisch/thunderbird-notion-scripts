@@ -1,6 +1,7 @@
 import datetime
 
 from ..github_schema import schema
+from ..util import notion_url_equal
 
 
 # Normalization and comparison helpers
@@ -44,6 +45,8 @@ def extract_project_item_old_value(project_item_value, data_type):
 
 def field_value_changed(old_value, new_value):
     """Compare field values with normalization applied to both sides."""
+    if notion_url_equal(old_value, new_value):
+        return False
     return normalize_outbound_field_value(old_value) != normalize_outbound_field_value(new_value)
 
 
