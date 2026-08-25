@@ -186,7 +186,7 @@ twoway_cache_path = ".cache/mzla-notion/services.sqlite3"
 
 notion_tasks_id = "2332df5d45ae8072aa7aededaf161252"
 notion_milestones_id = "2332df5d45ae80909305fe2278a14629"
-notion_epics_id = "2332df5d45ae803dbebad6d6875f5399"
+#notion_epics_id = "2332df5d45ae803dbebad6d6875f5399"
 
 notion_team_id = "2332df5d45ae80bc8839d089f5c7f608"
 notion_associated_team = ["2332df5d45ae8083af1dcda07b5c1eca", "31a2df5d45ae80d38897dd6efe4e134a"]

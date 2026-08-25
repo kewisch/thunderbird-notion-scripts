@@ -81,16 +81,6 @@ class TwoWayTestTracker(IssueTracker):
                 repos.setdefault(repo, {})[issue_id] = issue
         return repos
 
-    async def collect_tracker_milestones(self, milestones_issue_type, sub_issues=False):
-        for issue in self.issues.values():
-            if issue.issue_type == milestones_issue_type:
-                yield issue
-
-    async def collect_tracker_epics(self, epics_issue_type, sub_issues=False):
-        for issue in self.issues.values():
-            if issue.issue_type == epics_issue_type:
-                yield issue
-
     async def update_milestone_issue(self, old_issue, new_issue):
         self.updated_milestones.append((old_issue, new_issue))
 
@@ -581,7 +571,7 @@ class TwoWaySyncTest(BaseTestCase):
         tie_ts = datetime.datetime(2022, 7, 6, 20, 25, tzinfo=datetime.timezone.utc)
         tracker = TwoWayTestTracker(
             issues=[
-                self._issue("123", updated=tie_ts),
+                self._issue("123", updated=tie_ts, title="[meta] Milestone"),
                 self._issue("234", updated=tie_ts, parents=[IssueRef(repo="repo", id="123")]),
             ],
             recent_ids=[("repo", "123"), ("repo", "234")],
