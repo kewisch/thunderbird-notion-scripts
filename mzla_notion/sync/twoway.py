@@ -911,9 +911,6 @@ class TrackerTwoWaySync(BaseSync):
                 else:
                     skipped += 1
 
-        if skipped:
-            self.logger.debug("Filtered %d recent tracker issues from task processing", skipped)
-
         return task_issues
 
     def _filter_milestone_issues_by_repo(self, issues_by_repo):
