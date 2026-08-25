@@ -1,13 +1,18 @@
 import asyncio
 import dataclasses
 import datetime
+import hashlib
+import json
 import logging
+import sqlite3
 
 from collections import defaultdict
 
+from notion_client.errors import APIResponseError
 from notion_client.helpers import async_iterate_paginated_api
 
 from .base import BaseSync
+from .twoway_cache import TwoWayNotionCache
 
 from ..util import ensure_date, getnestedattr
 from ..tracker.common import IssueRef
@@ -33,6 +38,9 @@ class TrackerTwoWaySync(BaseSync):
         milestones_notion_to_tracker_create=False,
         tasks_conflict_preference="tracker",
         milestones_conflict_preference="notion",
+        tracker_kind=None,
+        twoway_cache_enabled=False,
+        twoway_cache_path=".cache/mzla-notion/twoway.sqlite3",
         full_sync=False,
         **kwargs,
     ):
@@ -51,6 +59,11 @@ class TrackerTwoWaySync(BaseSync):
             "task": "notion_to_tracker" if tasks_conflict_preference == "notion" else "tracker_to_notion",
             "milestone": "notion_to_tracker" if milestones_conflict_preference == "notion" else "tracker_to_notion",
         }
+        self.tracker_kind = tracker_kind or type(self.tracker).__name__
+        self.twoway_cache_enabled = twoway_cache_enabled
+        self.twoway_cache_path = twoway_cache_path
+        self._notion_cache = None
+        self._using_notion_cache = False
         self.full_sync = full_sync
         self._task_create_cache = {}
         self._unlinked_notion_tasks = []
@@ -63,6 +76,21 @@ class TrackerTwoWaySync(BaseSync):
             self._milestones_notion_to_tracker_create_unsupported = True
 
     async def _async_init(self):
+        if self.twoway_cache_enabled:
+            self._notion_cache = self._open_notion_cache()
+
+        if self._notion_cache and not self.full_sync and self._notion_cache.is_valid(self._cache_fingerprint()):
+            self._using_notion_cache = True
+            await self._async_init_from_cache()
+            return
+
+        if self._notion_cache and not self.full_sync:
+            self.logger.info("Two-way Notion cache missing or stale, doing full Notion discovery")
+
+        await self._async_init_full()
+        self._rebuild_notion_cache()
+
+    async def _async_init_full(self):
         use_single_task_query = self.tasks_notion_to_tracker and self.tasks_notion_to_tracker_create
         if not use_single_task_query:
             async with asyncio.TaskGroup() as tg:
@@ -100,6 +128,242 @@ class TrackerTwoWaySync(BaseSync):
 
         if self.sprint_db:
             self._all_sprint_pages = sprint_pages.result()
+
+    async def _async_init_from_cache(self):
+        self.logger.info("Using two-way Notion cache at %s", self.twoway_cache_path)
+        self._notion_tasks_issues, duplicate_tasks = self._notion_cache.load_linked_pages(
+            "task", self.tasks_db.database_id
+        )
+        self._notion_milestone_issues, duplicate_milestones = self._notion_cache.load_linked_pages(
+            "milestone", self.milestones_db.database_id
+        )
+        self._log_duplicate_cache_refs("task", duplicate_tasks)
+        self._log_duplicate_cache_refs("milestone", duplicate_milestones)
+
+        async with asyncio.TaskGroup() as tg:
+            valid_milestones = tg.create_task(self.milestones_db.validate_props())
+            valid_tasks = tg.create_task(self.tasks_db.validate_props())
+            changed_tasks = tg.create_task(
+                self._discover_recent_notion_pages(
+                    "task",
+                    self.tasks_db.database_id,
+                    self.propnames.get("notion_tasks_team"),
+                    self._task_discovery_since,
+                )
+            )
+            changed_milestones = tg.create_task(
+                self._discover_recent_notion_pages(
+                    "milestone",
+                    self.milestones_db.database_id,
+                    self.propnames.get("notion_milestones_team"),
+                    self._task_discovery_since,
+                )
+            )
+
+            if self.sprint_db:
+                sprint_pages = tg.create_task(self.sprint_db.get_all_pages())
+
+        if not valid_milestones.result():
+            raise Exception("Milestone schema failed to validate")
+        if not valid_tasks.result():
+            raise Exception("Tasks schema failed to validate")
+
+        self._unlinked_notion_tasks = []
+        self._merge_recent_notion_pages("task", self.tasks_db.database_id, changed_tasks.result())
+        self._merge_recent_notion_pages("milestone", self.milestones_db.database_id, changed_milestones.result())
+        self._remove_duplicate_cache_refs("task", self.tasks_db.database_id, self._notion_tasks_issues)
+        self._remove_duplicate_cache_refs("milestone", self.milestones_db.database_id, self._notion_milestone_issues)
+
+        if self.sprint_db:
+            self._all_sprint_pages = sprint_pages.result()
+
+    def _open_notion_cache(self):
+        try:
+            return TwoWayNotionCache(self.twoway_cache_path, self.project_key)
+        except sqlite3.DatabaseError:
+            self.logger.warning("Two-way Notion cache is corrupt, rebuilding %s", self.twoway_cache_path)
+            try:
+                TwoWayNotionCache(self.twoway_cache_path, self.project_key).close()
+            except sqlite3.DatabaseError:
+                from pathlib import Path
+
+                Path(self.twoway_cache_path).unlink(missing_ok=True)
+            return TwoWayNotionCache(self.twoway_cache_path, self.project_key)
+
+    def _cache_fingerprint(self):
+        data = {
+            "tracker_kind": self.tracker_kind,
+            "tasks_database_id": self.tasks_db.database_id,
+            "milestones_database_id": self.milestones_db.database_id,
+            "sprint_database_id": self.sprint_db.database_id if self.sprint_db else None,
+            "team_ids": sorted(self.configured_team_ids),
+            "repositories": sorted(self.tracker.get_all_repositories()),
+            "properties": self.propnames,
+        }
+        raw = json.dumps(data, sort_keys=True, default=str)
+        return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+    def _rebuild_notion_cache(self):
+        if not self._notion_cache:
+            return
+
+        self._notion_cache.reset(self._cache_fingerprint())
+        for entity_kind, database_id, refs in (
+            ("task", self.tasks_db.database_id, self._notion_tasks_issues),
+            ("milestone", self.milestones_db.database_id, self._notion_milestone_issues),
+        ):
+            for repo, pages_by_issue in refs.items():
+                for issue_id, page in pages_by_issue.items():
+                    issue_url = self._page_issue_url(page)
+                    self._notion_cache.upsert_page(
+                        entity_kind,
+                        database_id,
+                        page,
+                        issue_ref=IssueRef(repo=repo, id=issue_id),
+                        issue_url=issue_url,
+                    )
+
+    def _log_duplicate_cache_refs(self, entity_kind, duplicate_refs):
+        for repo, issue_id in sorted(duplicate_refs):
+            self.logger.warning(
+                "Skipping cached %s %s#%s because multiple Notion pages use the same issue URL",
+                entity_kind,
+                repo,
+                issue_id,
+            )
+
+    def _remove_duplicate_cache_refs(self, entity_kind, database_id, refs):
+        duplicates = self._notion_cache.duplicate_issue_keys(entity_kind, database_id)
+        self._log_duplicate_cache_refs(entity_kind, duplicates)
+        for repo, issue_id in duplicates:
+            refs.get(repo, {}).pop(issue_id, None)
+
+    def _page_issue_url(self, page):
+        value = self._get_prop(page, "notion_issue_field")
+        if isinstance(value, list):
+            return getnestedattr(lambda: value[0]["external"]["url"], "") if value else ""
+        return value or ""
+
+    def _page_issue_ref(self, page):
+        issue_url = self._page_issue_url(page)
+        ref = self.tracker.parse_issueref(issue_url) if issue_url else None
+        if ref and self.tracker.is_repo_allowed(ref.repo):
+            return ref, issue_url
+        return None, issue_url
+
+    def _drop_page_from_refs(self, refs, page_id):
+        for repo in list(refs):
+            for issue_id, page in list(refs[repo].items()):
+                if page.get("id") == page_id:
+                    del refs[repo][issue_id]
+            if not refs[repo]:
+                del refs[repo]
+
+    def _cache_upsert_page(self, entity_kind, database_id, page, ref, issue_url, observed=False):
+        if self._notion_cache and (observed or not self.dry):
+            self._notion_cache.upsert_page(entity_kind, database_id, page, issue_ref=ref, issue_url=issue_url)
+
+    def _cache_delete_page(self, entity_kind, database_id, page_id, observed=False):
+        if self._notion_cache and (observed or not self.dry):
+            self._notion_cache.delete_page(entity_kind, database_id, page_id)
+
+    async def _record_task_cache_update(self, page, tracker_issue):
+        self._cache_upsert_page(
+            "task",
+            self.tasks_db.database_id,
+            page,
+            IssueRef(repo=tracker_issue.repo, id=tracker_issue.id),
+            tracker_issue.url,
+        )
+
+    def _record_milestone_cache_update(self, page, tracker_issue):
+        self._cache_upsert_page(
+            "milestone",
+            self.milestones_db.database_id,
+            page,
+            IssueRef(repo=tracker_issue.repo, id=tracker_issue.id),
+            tracker_issue.url,
+        )
+
+    def _merge_linked_page(self, entity_kind, database_id, refs, page):
+        page_id = page["id"]
+        self._drop_page_from_refs(refs, page_id)
+        ref, issue_url = self._page_issue_ref(page)
+        if ref:
+            refs[ref.repo][ref.id] = page
+            self._cache_upsert_page(entity_kind, database_id, page, ref, issue_url, observed=True)
+            return ref
+
+        self._cache_delete_page(entity_kind, database_id, page_id, observed=True)
+        return None
+
+    def _is_task_unlinked_create_candidate(self, page):
+        if self._get_prop(page, "notion_issue_field", []):
+            return False
+
+        status = getnestedattr(
+            lambda: self._get_prop(page, "notion_tasks_status")["name"],
+            None,
+        )
+        if self._is_closed_status(status):
+            return False
+
+        task_team_prop = self.propnames.get("notion_tasks_team")
+        if task_team_prop and self.configured_team_ids:
+            page_teams = set(self._get_relation_ids(page, "notion_tasks_team"))
+            if not page_teams.intersection(self.configured_team_ids):
+                return False
+
+        return True
+
+    def _merge_recent_notion_pages(self, entity_kind, database_id, pages):
+        refs = self._notion_tasks_issues if entity_kind == "task" else self._notion_milestone_issues
+        for page in pages:
+            ref = self._merge_linked_page(entity_kind, database_id, refs, page)
+            if entity_kind == "task" and ref is None and self._is_task_unlinked_create_candidate(page):
+                self._unlinked_notion_tasks.append(page)
+
+    def _recent_filter(self, since):
+        return {
+            "timestamp": "last_edited_time",
+            "last_edited_time": {
+                "on_or_after": since.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            },
+        }
+
+    def _team_filter(self, team_prop):
+        if not team_prop or not self.configured_team_ids:
+            return None
+        return {"or": [{"property": team_prop, "relation": {"contains": team}} for team in self.configured_team_ids]}
+
+    def _combined_filter(self, *filters):
+        filters = [item for item in filters if item]
+        if len(filters) == 1:
+            return filters[0]
+        return {"and": filters}
+
+    async def _discover_recent_notion_pages(self, entity_kind, database_id, team_prop, since):
+        pages = []
+        query_filter = self._combined_filter(self._team_filter(team_prop), self._recent_filter(since))
+
+        async for page in async_iterate_paginated_api(
+            self.notion.databases.query,
+            database_id=database_id,
+            filter=query_filter,
+        ):
+            edited = self._page_timestamp(page)
+            if edited is None or edited < since:
+                continue
+
+            if team_prop and self.configured_team_ids:
+                prop_key = "notion_tasks_team" if entity_kind == "task" else "notion_milestones_team"
+                page_teams = set(self._get_relation_ids(page, prop_key))
+                if not page_teams.intersection(self.configured_team_ids):
+                    continue
+
+            pages.append(page)
+
+        return pages
 
     def _find_task_parents(self, tracker_issue):
         milestone_issues = self._notion_milestone_issues
@@ -210,6 +474,7 @@ class TrackerTwoWaySync(BaseSync):
             self.milestones_db.page_diff(notion_data, page, log=self.logger.isEnabledFor(logging.DEBUG))
             self.logger.debug("\t" + str(notion_data))
             await self.milestones_db.update_page(page, notion_data, diff_log=False)
+            self._record_milestone_cache_update(page, tracker_issue)
         else:
             self.logger.info(f"Unchanged milestone {tracker_issue.repo}#{tracker_issue.id} - {tracker_issue.title}")
         return changed
@@ -356,6 +621,55 @@ class TrackerTwoWaySync(BaseSync):
 
         return tracker_issues
 
+    async def _retrieve_cached_page(self, entity_kind, database_id, refs, key, page):
+        try:
+            current_page = await self.notion.pages.retrieve(page["id"])
+        except APIResponseError as exc:
+            if getattr(exc, "status", None) == 404 or getattr(exc, "code", None) == "object_not_found":
+                self.logger.warning("Evicting stale cached Notion %s page %s", entity_kind, page["id"])
+                self._cache_delete_page(entity_kind, database_id, page["id"], observed=True)
+                refs.pop(key, None)
+                return None, None
+            raise
+
+        if current_page.get("archived"):
+            self.logger.warning("Evicting archived cached Notion %s page %s", entity_kind, page["id"])
+            self._cache_delete_page(entity_kind, database_id, page["id"], observed=True)
+            refs.pop(key, None)
+            return None, None
+
+        ref, issue_url = self._page_issue_ref(current_page)
+        for existing_key, existing_page in list(refs.items()):
+            if existing_page.get("id") == current_page["id"]:
+                refs.pop(existing_key, None)
+
+        if not ref:
+            self._cache_delete_page(entity_kind, database_id, current_page["id"], observed=True)
+            return None, None
+
+        refs[(ref.repo, ref.id)] = current_page
+        self._cache_upsert_page(entity_kind, database_id, current_page, ref, issue_url, observed=True)
+        return current_page, (ref.repo, ref.id)
+
+    async def _refresh_cached_candidate_pages(self, entity_kind, database_id, refs, candidates):
+        if not self._using_notion_cache:
+            return candidates
+
+        refreshed_candidates = set(candidates)
+        for key in list(candidates):
+            page = refs.get(key)
+            if not page or not page.get("_twoway_cache_snapshot"):
+                continue
+
+            current_page, current_key = await self._retrieve_cached_page(entity_kind, database_id, refs, key, page)
+            if current_page is None:
+                refreshed_candidates.discard(key)
+            elif current_key != key:
+                refreshed_candidates.discard(key)
+                refreshed_candidates.add(current_key)
+
+        return refreshed_candidates
+
     def _filter_task_issues_by_repo(self, issues_by_repo):
         task_issues = defaultdict(dict)
         skipped = 0
@@ -473,6 +787,8 @@ class TrackerTwoWaySync(BaseSync):
         notion_data = self._get_milestone_notion_data_from_tracker(tracker_issue)
         self._set_if_prop(notion_data, "notion_milestones_team", self.configured_team_ids or None)
         page = await self.milestones_db.create_page(notion_data)
+        if page:
+            self._record_milestone_cache_update(page, tracker_issue)
         return page
 
     async def _link_task_page_to_issue(self, page, tracker_issue):
@@ -481,7 +797,12 @@ class TrackerTwoWaySync(BaseSync):
                 {"url": tracker_issue.url, "name": self.tracker.format_issueref_short(tracker_issue)}
             ]
         }
-        return await self.tasks_db.update_page(page, notion_data)
+        changed = await self.tasks_db.update_page(page, notion_data)
+        if changed:
+            page = dict(page)
+            page["properties"] = {**page.get("properties", {}), **self.tasks_db.dict_to_page(dict(notion_data))}
+            await self._record_task_cache_update(page, tracker_issue)
+        return changed
 
     async def _get_tracker_milestones_for_create(self, since):
         milestones = {}
@@ -915,6 +1236,12 @@ class TrackerTwoWaySync(BaseSync):
         milestone_candidates, milestone_linked_count, milestone_skipped = self._collect_candidates(
             notion_milestone_refs, recent_milestone_keys, since
         )
+        task_candidates = await self._refresh_cached_candidate_pages(
+            "task", self.tasks_db.database_id, notion_task_refs, task_candidates
+        )
+        milestone_candidates = await self._refresh_cached_candidate_pages(
+            "milestone", self.milestones_db.database_id, notion_milestone_refs, milestone_candidates
+        )
 
         task_issues = await self._load_tracker_candidates(task_candidates, recent_tasks_by_repo)
         task_issues = self._filter_task_issues(task_issues)
@@ -941,6 +1268,9 @@ class TrackerTwoWaySync(BaseSync):
         async with asyncio.TaskGroup() as tg:
             tg.create_task(self._update_timestamp(self.milestones_db, timestamp))
             tg.create_task(self._update_timestamp(self.tasks_db, timestamp))
+
+        if self._notion_cache:
+            self._notion_cache.close()
 
         await self.notion.aclose()
 

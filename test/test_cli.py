@@ -216,6 +216,44 @@ incremental_lookback_seconds = 60
         self.assertEqual(result, 0)
         self.assertEqual(synchronize.await_args.kwargs["incremental_lookback_seconds"], 3600)
 
+    async def test_twoway_cache_config_is_forwarded(self):
+        result, _, _, synchronize = await self._run_twoway_cli(
+            """
+[sync.services]
+method = "tracker_twoway"
+tracker = "github"
+repositories = ["example/repo"]
+notion_milestones_id = "milestones-id"
+notion_tasks_id = "tasks-id"
+twoway_cache_enabled = true
+twoway_cache_path = ".cache/custom.sqlite3"
+""",
+        )
+
+        self.assertEqual(result, 0)
+        self.assertTrue(synchronize.await_args.kwargs["twoway_cache_enabled"])
+        self.assertEqual(synchronize.await_args.kwargs["twoway_cache_path"], ".cache/custom.sqlite3")
+
+    async def test_twoway_cache_cli_overrides_config(self):
+        result, _, _, synchronize = await self._run_twoway_cli(
+            """
+[sync.services]
+method = "tracker_twoway"
+tracker = "github"
+repositories = ["example/repo"]
+notion_milestones_id = "milestones-id"
+notion_tasks_id = "tasks-id"
+twoway_cache_enabled = false
+twoway_cache_path = ".cache/config.sqlite3"
+""",
+            twoway_cache=True,
+            twoway_cache_path=".cache/cli.sqlite3",
+        )
+
+        self.assertEqual(result, 0)
+        self.assertTrue(synchronize.await_args.kwargs["twoway_cache_enabled"])
+        self.assertEqual(synchronize.await_args.kwargs["twoway_cache_path"], ".cache/cli.sqlite3")
+
 
 if __name__ == "__main__":
     unittest.main()

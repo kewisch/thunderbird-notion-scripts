@@ -253,6 +253,9 @@ class NotionHandler:
             side_effect=self.pages_create_handler
         )
         respx_mock.route(
+            name="pages_retrieve", method="GET", scheme="https", host="api.notion.com", path__regex=PAGE_PATTERN
+        ).mock(side_effect=self.pages_retrieve_handler)
+        respx_mock.route(
             name="pages_update", method="PATCH", scheme="https", host="api.notion.com", path__regex=PAGE_PATTERN
         ).mock(side_effect=self.pages_update_handler)
 
@@ -322,6 +325,19 @@ class NotionHandler:
         db_id = reqjson["parent"]["database_id"]
         if handler := self._get_handler(db_id):
             return httpx.Response(200, json=handler.create_handler(reqjson))
+
+        return httpx.Response(404)
+
+    def pages_retrieve_handler(self, req, page):
+        page = (
+            self.tasks_handler.get_page(page)
+            or self.epics_handler.get_page(page)
+            or self.milestones_handler.get_page(page)
+            or self.sprints_handler.get_page(page)
+        )
+
+        if page:
+            return httpx.Response(200, json=page)
 
         return httpx.Response(404)
 

@@ -136,6 +136,8 @@ async def cmd_synchronize(
     synchronous=False,
     full_sync=False,
     lookback=None,
+    twoway_cache=None,
+    twoway_cache_path=None,
 ):
     """This is the main cli. Please use --help on how to use it."""
     with open(config, "rb") as fp:
@@ -285,6 +287,12 @@ async def cmd_synchronize(
                 milestones_notion_to_tracker_create=project.get("milestones_notion_to_tracker_create", False),
                 tasks_conflict_preference=project.get("tasks_conflict_preference", "tracker"),
                 milestones_conflict_preference=project.get("milestones_conflict_preference", "notion"),
+                tracker_kind=tracker_kind,
+                twoway_cache_enabled=(
+                    twoway_cache if twoway_cache is not None else project.get("twoway_cache_enabled", False)
+                ),
+                twoway_cache_path=twoway_cache_path
+                or project.get("twoway_cache_path", ".cache/mzla-notion/twoway.sqlite3"),
                 full_sync=full_sync,
             )
         elif project["method"] == "github_labels":
@@ -378,6 +386,17 @@ async def async_main():
         help="Override incremental lookback window for supported engines. Specify seconds or an ISO date/time.",
     )
     parser.add_argument(
+        "--twoway-cache",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Enable or disable the SQLite Notion link cache for two-way sync.",
+    )
+    parser.add_argument(
+        "--twoway-cache-path",
+        default=None,
+        help="Path to the SQLite Notion link cache for two-way sync.",
+    )
+    parser.add_argument(
         "-n",
         "--dry-run",
         action=argparse.BooleanOptionalAction,
@@ -410,5 +429,7 @@ async def async_main():
                 synchronous=args.synchronous,
                 full_sync=args.full_sync,
                 lookback=args.lookback,
+                twoway_cache=args.twoway_cache,
+                twoway_cache_path=args.twoway_cache_path,
             )
         )

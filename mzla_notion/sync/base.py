@@ -487,6 +487,9 @@ class BaseSync:
 
         await database.set_description(description)
 
+    async def _record_task_cache_update(self, page, tracker_issue):
+        pass
+
     async def synchronize_single_task(self, tracker_issue, page=None, candidate_debug=None):
         """Synchronize a single tracker issue to Notion.
 
@@ -547,6 +550,9 @@ class BaseSync:
                 body = self.TASK_BODY_WARNING.format(self.tracker.name) + "\n\n" + body
 
             await self.tasks_db.replace_page_contents(page["id"], body)
+
+        if changed:
+            await self._record_task_cache_update(page, tracker_issue)
 
         return changed
 
