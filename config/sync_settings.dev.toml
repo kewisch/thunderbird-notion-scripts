@@ -220,6 +220,7 @@ milestones_create_from_tracker = true # TODO remove?
 # Epics
 epics_issue_type = "Epic"
 epics_conflict_preference = "notion"
+epics_allow_parents = true
 
 epics_tracker_to_notion = true
 epics_notion_to_tracker = true

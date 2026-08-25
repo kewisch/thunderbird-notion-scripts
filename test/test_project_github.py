@@ -4,7 +4,7 @@ import types
 import sgqlc.operation
 import json
 import httpx
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 from freezegun import freeze_time
 
@@ -764,6 +764,65 @@ class GitHubProjectTest(BaseTestCase):
             issue_type=types.SimpleNamespace(name=type_name) if type_name else None,
             repository=types.SimpleNamespace(name_with_owner="kewisch/test"),
         )
+
+    def _make_typed_issue(self, type_name, parent=None):
+        return types.SimpleNamespace(
+            id="ISSUE",
+            number=2,
+            url="https://github.com/kewisch/test/issues/2",
+            issue_type=types.SimpleNamespace(name=type_name),
+            parent=parent,
+            repository=types.SimpleNamespace(name_with_owner="kewisch/test"),
+            sub_issues=types.SimpleNamespace(nodes=[]),
+        )
+
+    async def test_fixup_epic_parent_untyped_removed_by_default(self):
+        self.github._get_project_items = MagicMock(return_value=(None, None))
+        self.github.dry = True
+        self.github.epics_issue_type = "Epic"
+
+        issue = self._make_typed_issue("Epic", self._make_parent(None))
+
+        await self.github._fixup_issue_milestone_with_parent(issue)
+        self.assertIsNone(issue.parent)
+
+    async def test_fixup_epic_parent_untyped_allowed_when_configured(self):
+        self.github._get_project_items = MagicMock(return_value=(None, None))
+        self.github.dry = True
+        self.github.epics_issue_type = "Epic"
+        self.github.epics_allow_parents = True
+
+        issue = self._make_typed_issue("Epic", self._make_parent(None))
+
+        await self.github._fixup_issue_milestone_with_parent(issue)
+        self.assertIsNotNone(issue.parent)
+
+    async def test_fixup_epic_parent_typed_removed_when_parents_allowed(self):
+        self.github._get_project_items = MagicMock(return_value=(None, None))
+        self.github.dry = True
+        self.github.epics_issue_type = "Epic"
+        self.github.epics_allow_parents = True
+
+        issue = self._make_typed_issue("Epic", self._make_parent("Program"))
+
+        await self.github._fixup_issue_milestone_with_parent(issue)
+        self.assertIsNone(issue.parent)
+
+    async def test_fixup_epic_allowed_parent_stays_on_milestones_project(self):
+        milestones_project = types.SimpleNamespace(remove_project_from_issue=AsyncMock())
+        self.github._get_project_items = MagicMock(return_value=(None, object()))
+        self.github._comment_on_issue = AsyncMock()
+        self.github.github_milestones_projects = {"kewisch/test": milestones_project}
+        self.github.dry = False
+        self.github.epics_issue_type = "Epic"
+        self.github.epics_allow_parents = True
+
+        issue = self._make_typed_issue("Epic", self._make_parent(None))
+
+        await self.github._fixup_issue_milestone_with_parent(issue)
+        self.assertIsNotNone(issue.parent)
+        milestones_project.remove_project_from_issue.assert_not_called()
+        self.github._comment_on_issue.assert_not_called()
 
     def test_is_deeply_nested_subissue(self):
         self.github.milestones_issue_type = "Milestone"
