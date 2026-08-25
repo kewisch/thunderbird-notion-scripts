@@ -51,6 +51,7 @@ class BaseSync:
         team_association=None,
         dry=False,
         synchronous=False,
+        hide_unchanged=False,
         logger=logging.getLogger("base_sync"),
     ):
         """Set up the project sync.
@@ -92,6 +93,7 @@ class BaseSync:
             dry (bool): If true, only query operations are done. Mutations are disabled for both
                 the issue tracker and Notion.
             synchronous (bool): If true, run any async tasks sequentially.
+            hide_unchanged (bool): If true, suppress unchanged item progress messages.
             logger (logging.Logger): Logger to use for sync progress messages.
         """
         self.notion = notion_client.AsyncClient(auth=notion_token, client=AsyncRetryingClient(http2=True))
@@ -188,6 +190,7 @@ class BaseSync:
         self.configured_team_ids = self._normalize_relation_ids(team_association)
         self.dry = dry
         self.synchronous = synchronous
+        self.hide_unchanged = hide_unchanged
         self.project_key = project_key
 
     @property
@@ -529,8 +532,9 @@ class BaseSync:
                 self.logger.debug("\t" + str(notion_data))
                 await self.tasks_db.update_page(page, notion_data, diff_log=False)
             else:
-                self.logger.info(f"Unchanged task {tracker_issue.repo}#{tracker_issue.id} - {tracker_issue.title}")
-                if candidate_debug:
+                if not self.hide_unchanged:
+                    self.logger.info(f"Unchanged task {tracker_issue.repo}#{tracker_issue.id} - {tracker_issue.title}")
+                if candidate_debug and not self.hide_unchanged:
                     self.logger.debug(f"  timestamps: {candidate_debug}")
         else:
             self.logger.info(f"Creating task (Tracker->Notion) {tracker_issue.url} - {tracker_issue.title}")

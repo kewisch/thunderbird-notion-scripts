@@ -138,6 +138,7 @@ async def cmd_synchronize(
     lookback=None,
     twoway_cache=None,
     twoway_cache_path=None,
+    hide_unchanged=False,
 ):
     """This is the main cli. Please use --help on how to use it."""
     with open(config, "rb") as fp:
@@ -229,6 +230,7 @@ async def cmd_synchronize(
                 team_association=project.get("notion_associated_team"),
                 dry=effective_dry_run,
                 synchronous=synchronous,
+                hide_unchanged=hide_unchanged,
             )
         elif project["method"] == "tracker_twoway":
             tracker_kind = project.get("tracker")
@@ -306,6 +308,7 @@ async def cmd_synchronize(
                 twoway_cache_path=twoway_cache_path
                 or project.get("twoway_cache_path", ".cache/mzla-notion/twoway.sqlite3"),
                 full_sync=full_sync,
+                hide_unchanged=hide_unchanged,
             )
         elif project["method"] == "github_labels":
             tracker = await GitHub.create(
@@ -415,6 +418,11 @@ async def async_main():
         default=None,
         help="Run the script without making changes",
     )
+    parser.add_argument(
+        "--hide-unchanged",
+        action="store_true",
+        help="Suppress unchanged item logs for project and two-way sync.",
+    )
     parser.add_argument("-l", "--list", action="store_true", help="List synchronizers and exit")
     parser.add_argument("--repositories", action="store_true", help="List repositories and exit")
     parser.add_argument(
@@ -443,5 +451,6 @@ async def async_main():
                 lookback=args.lookback,
                 twoway_cache=args.twoway_cache,
                 twoway_cache_path=args.twoway_cache_path,
+                hide_unchanged=args.hide_unchanged,
             )
         )
